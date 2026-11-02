@@ -1516,8 +1516,11 @@ dialog.log-popup::backdrop {
   flex-direction: column;
   gap: 16px;
 }
+/* Each step: its chip over a one-line title and a one-line detail, between its number
+   and the read button (PlanList's Popup), both centred. */
 .plan-steps li {
   display: flex;
+  align-items: center;
   gap: 14px;
 }
 .plan-num {
@@ -1533,7 +1536,59 @@ dialog.log-popup::backdrop {
   background: var(--accent-soft);
 }
 .plan-body {
+  flex: 1;
   min-width: 0;
+}
+.plan-body > .how {
+  margin: 0 0 6px;
+}
+.plan-step-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.plan-detail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+button.plan-read {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--subtle);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+button.plan-read:hover:not(:disabled) {
+  background: var(--neutral-soft);
+  color: var(--text);
+}
+.plan-read-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 16px 24px 24px;
+  overflow-y: auto;
+}
+.plan-read-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-read-meta .how {
+  margin-left: 0;
+}
+.plan-read-text {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 .plan-body .muted {
   margin-top: 2px;

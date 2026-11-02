@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { BuildCard, EventList } from './BuildCard'
 import { DROP_SPRING, prefersReducedMotion, type Intro } from './Flight'
-import { ActivityPopup, FEED_OUT_MS, StepFeed } from './StepFeed'
+import { ActivityPopup, FEED_OUT_MS, Popup, StepFeed } from './StepFeed'
 import { api, live, openExternal, type JobSnapshot, type Plan, type RunSummary, type UserRequest, type Workflow } from './api'
 
 const POLL_MS = 900
@@ -65,21 +65,50 @@ function PlanSteps({ plan }: { plan: Plan }) {
   )
 }
 
+/** Each step's detail is cut to one line; its read button opens the whole step in a Popup. */
 function PlanList({ plan }: { plan: Plan }) {
+  const [reading, setReading] = useState<number | null>(null)
+  const step = reading === null ? null : plan.steps[reading]
   return (
-    <ol className="plan-steps">
-      {plan.steps.map((s, i) => (
-        <li key={i}>
-          <span className="plan-num">{i + 1}</span>
-          <div className="plan-body">
-            <div className="plan-title">
-              {s.title} <span className={`how how-${s.how}`}>{HOW_LABEL[s.how] ?? s.how}</span>
+    <>
+      <ol className="plan-steps">
+        {plan.steps.map((s, i) => (
+          <li key={i}>
+            <span className="plan-num">{i + 1}</span>
+            <div className="plan-body">
+              <span className={`how how-${s.how}`}>{HOW_LABEL[s.how] ?? s.how}</span>
+              <div className="plan-title plan-step-name">{s.title}</div>
+              <div className="plan-detail muted small">{s.detail}</div>
             </div>
-            <div className="muted small">{s.detail}</div>
+            <button type="button" className="plan-read" aria-label={`Read step ${i + 1}`} title="Read" aria-haspopup="dialog" onClick={() => setReading(i)}>
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M8 4.2C6.8 3.3 5 2.8 2.5 2.8v9.4c2.5 0 4.3.5 5.5 1.4 1.2-.9 3-1.4 5.5-1.4V2.8c-2.5 0-4.3.5-5.5 1.4Zm0 0v9.4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <Popup open={step !== null} label="Plan step" title={step?.title} onClose={() => setReading(null)}>
+        {step && reading !== null && (
+          <div className="plan-read-view">
+            <div className="plan-read-meta">
+              <span className="plan-num">{reading + 1}</span>
+              <span className="muted small">
+                Step {reading + 1} of {plan.steps.length}
+              </span>
+              <span className={`how how-${step.how}`}>{HOW_LABEL[step.how] ?? step.how}</span>
+            </div>
+            <p className="plan-read-text">{step.detail}</p>
           </div>
-        </li>
-      ))}
-    </ol>
+        )}
+      </Popup>
+    </>
   )
 }
 
