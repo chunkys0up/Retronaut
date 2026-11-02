@@ -505,10 +505,20 @@ button.brand-button:hover:not(:disabled) {
 }
 
 /* The cards under the build bar: they drop in from the very top of the screen, behind the
-   bar (WorkflowView's dropIn); newer, higher cards stay in front as the others make room. */
+   bar (WorkflowView's dropIn), to the window's middle line, where the step they cover was
+   (StepFeed): the list keeps as much room below it as the bar and the page's padding take
+   above, its cards centred in it. Newer, higher cards stay in front as the others make room. */
+.job.springing {
+  min-height: calc(100vh - 2 * (var(--bar-h, 160px) + 40px));
+  justify-content: center;
+}
 .job.springing > * {
   position: relative;
   transform-origin: 50% 0;
+  /* Always drawn on its own layer: centred, a card can sit between two pixels, and one that
+     moved on and off a layer (dropping in, gliding, the blurs around it) would snap to the
+     pixel above or below each time, a one-pixel jitter. */
+  will-change: transform;
 }
 .job.springing > :nth-child(1) { z-index: 3; }
 .job.springing > :nth-child(2) { z-index: 2; }
@@ -518,9 +528,13 @@ button.brand-button:hover:not(:disabled) {
   top: 0;
   z-index: 5;
 }
-/* Room between the build bar and the cards under it. */
+/* The workflow page's bottom edge: the same as its sides (App.css). */
+.main > .page.workflow {
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
+}
+/* Room between the build bar and the cards under it: the same as the page's sides (App.css). */
 .main > .build-bar-wrap + .page {
-  padding-top: 28px;
+  padding-top: 40px;
 }
 .main > .page {
   width: 100%;
@@ -1131,6 +1145,243 @@ button.small-button {
   grid-template-columns: 1fr;
 }
 
+/* While building: the step it's on, as a line of text in the middle of the window (StepFeed).
+   Each step blurs in as it mounts, after the last one blurs out. While cards wait on the
+   user, the whole thing blurs and fades out of their way. */
+.step-feed {
+  /* Over the whole main area (the nearest positioned box, a window tall), not just the page
+     under the bar, so it sits in the window's middle; the bar stays in front. */
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+  pointer-events: none;
+  transition: opacity 0.5s ease, filter 0.5s ease;
+}
+.step-feed.away {
+  opacity: 0;
+  filter: blur(10px);
+  /* The step blurring out (StepFeed's blurOut); the cards wait for it (FEED_OUT_MS). */
+  transition-duration: 0.4s;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+.step-view {
+  position: relative;
+  width: min(640px, 100%);
+  padding-top: 44px; /* room for the corner button */
+  pointer-events: auto;
+  animation: step-in 0.55s cubic-bezier(0, 0, 0.2, 1);
+}
+.step-feed.away .step-view {
+  pointer-events: none;
+}
+/* The step (its screenshot, if any, and its text) is centred on the window's middle line: in
+   a box from just under the bar to as far above the window's bottom, centred in it. When it
+   doesn't fit there (a screenshot in a short window), it starts just under the bar and runs
+   on into the room below (safe), rather than up under the bar. The button at the top right
+   stays put however tall the step is, clear of the most text it shows (three lines,
+   .step-text) and beside any screenshot (.step-shot leaves room for it), and never higher
+   than the box. */
+.step-preview {
+  --clear: calc(var(--bar-h, 160px) + 24px);
+  position: absolute;
+  top: var(--clear);
+  bottom: var(--clear);
+  left: 0;
+  right: 0;
+  width: min(640px, 100% - 48px);
+  margin-inline: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+}
+.step-preview button.step-toggle {
+  top: max(0px, 50% - 92px);
+}
+/* The full log: from the top of the window, behind the bar, down to where the centred log
+   used to end (its 44px button row and up to 560px of list, centred); its button just under
+   the bar, beside it. */
+.step-feed.expanded {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0 64px calc(50vh - (44px + min(560px, 100vh - 400px)) / 2);
+}
+.step-history {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+.step-history button.step-toggle {
+  top: calc(var(--bar-h, 160px) + 16px);
+  right: auto;
+  left: calc(100% + 12px);
+}
+/* Quiet until pointed at: it's there when wanted, not competing with the step. */
+button.step-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.28);
+}
+button.step-toggle:hover:not(:disabled) {
+  background: var(--neutral-soft);
+  color: var(--muted);
+}
+.step-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  animation: step-in 0.55s cubic-bezier(0, 0, 0.2, 1);
+}
+.step-text {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.step-shot {
+  max-width: calc(100% - 96px); /* clear of the button at the top right */
+  /* Short enough that, with three lines of text under it, it fits between the bar and the
+     page's bottom inset (40px): the bar's 24px gap, the 20px gap above the text and its 90px. */
+  max-height: max(80px, min(320px, 100vh - var(--bar-h, 160px) - 174px));
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-deep);
+}
+@keyframes step-in {
+  from { opacity: 0; filter: blur(10px); }
+}
+/* The full log: it scrolls, fading out at its bottom edge, and over the whole height of the
+   bar at the top, gone a little before the window's edge. */
+.step-list {
+  list-style: none;
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  /* Starts under the bar, so its first entry isn't hidden there when scrolled to the top. */
+  padding: calc(var(--bar-h, 160px) + 16px) 4px 48px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* Each end eases in and out of its fade (smoothstep, in steps), so neither shows a line
+     where a straight fade would meet the solid middle. */
+  --fade-top-from: 20px;
+  --fade-top-to: calc(var(--bar-h, 160px) + 16px);
+  --fade-bottom-from: calc(100% - 64px);
+  --fade: linear-gradient(to bottom,
+    rgba(0, 0, 0, 0.000) var(--fade-top-from),
+    rgba(0, 0, 0, 0.043) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.125),
+    rgba(0, 0, 0, 0.156) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.25),
+    rgba(0, 0, 0, 0.316) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.375),
+    rgba(0, 0, 0, 0.500) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.5),
+    rgba(0, 0, 0, 0.684) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.625),
+    rgba(0, 0, 0, 0.844) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.75),
+    rgba(0, 0, 0, 0.957) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.875),
+    rgba(0, 0, 0, 1.000) var(--fade-top-to),
+    rgba(0, 0, 0, 1.000) var(--fade-bottom-from),
+    rgba(0, 0, 0, 0.957) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.125),
+    rgba(0, 0, 0, 0.844) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.25),
+    rgba(0, 0, 0, 0.684) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.375),
+    rgba(0, 0, 0, 0.500) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.5),
+    rgba(0, 0, 0, 0.316) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.625),
+    rgba(0, 0, 0, 0.156) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.75),
+    rgba(0, 0, 0, 0.043) calc(var(--fade-bottom-from) + (100% - var(--fade-bottom-from)) * 0.875),
+    rgba(0, 0, 0, 0.000) 100%);
+  -webkit-mask-image: var(--fade);
+  mask-image: var(--fade);
+}
+.step-list::-webkit-scrollbar {
+  display: none;
+}
+/* The full log, as the Activity card showed it, without the card's own scrolling. */
+.step-list .activity {
+  max-height: none;
+  overflow: visible;
+  padding: 0 4px;
+}
+
+/* The Activity card's full log (ActivityPopup): a modal over the whole window, but dimmed and
+   blurred like the Accounts popup only over the main area, right of the sidebar
+   (--main-left). In it, a card like the Accounts one holding the build's full log. */
+dialog.log-popup {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  overflow: hidden;
+  -webkit-app-region: no-drag; /* the title bar's drag strip would take its clicks */
+}
+dialog.log-popup::backdrop {
+  background: none;
+}
+.log-popup-scrim {
+  position: absolute;
+  inset: 0 0 0 var(--main-left, 0px);
+  display: grid;
+  place-items: center;
+  padding: 40px 64px;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  animation: log-popup-in 0.25s ease-out;
+}
+@keyframes log-popup-in {
+  from { opacity: 0; }
+}
+/* The card: the Accounts popup's (dialog.accounts), its header and all, as tall as the log
+   needs up to 560px; the log scrolls inside it under the header. */
+.log-popup-view {
+  width: min(560px, 100%);
+  max-height: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  animation: step-in 0.35s cubic-bezier(0, 0, 0.2, 1);
+}
+.log-popup-view .accounts-head {
+  align-items: center;
+  padding: 20px 24px 4px;
+}
+/* Short logs leave the card at their own height; long ones scroll, with the same eased
+   fades as the build's log at its top and bottom edges. */
+.log-popup .step-list {
+  flex: 0 1 auto;
+  padding: 16px 20px 24px;
+  --fade-top-from: 0px;
+  --fade-top-to: 16px;
+  --fade-bottom-from: calc(100% - 24px);
+}
+
 .request {
   border-color: rgba(255, 70, 8, 0.4);
   background: linear-gradient(180deg, rgba(255, 70, 8, 0.1), var(--surface) 96px);
@@ -1138,9 +1389,9 @@ button.small-button {
 }
 /* Asking for something (allow an app, connect an account, answer a question): solid
    orange, no border, white text and buttons, so it stands out from the dark cards. The
-   orange is softer than the accent so white text on it stays readable (4.6:1). */
+   brand's orange, as vivid as the accent. */
 .request-attention {
-  --attention: #c4512a;
+  --attention: #f4471f;
   border-color: transparent;
   background: var(--attention);
   color: #fff;

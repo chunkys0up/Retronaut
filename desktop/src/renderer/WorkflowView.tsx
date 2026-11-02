@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { BuildCard, formatDuration } from './BuildCard'
-import { prefersReducedMotion, type Intro } from './Flight'
-import { api, live, openExternal, type JobEvent, type JobSnapshot, type Plan, type RunSummary, type UserRequest, type Workflow } from './api'
+import { BuildCard, EventList } from './BuildCard'
+import { DROP_SPRING, prefersReducedMotion, type Intro } from './Flight'
+import { ActivityPopup, FEED_OUT_MS, StepFeed } from './StepFeed'
+import { api, live, openExternal, type JobSnapshot, type Plan, type RunSummary, type UserRequest, type Workflow } from './api'
 
 const POLL_MS = 900
 
@@ -258,11 +259,9 @@ function QuestionCard({ request, onAnswer, busy }: { request: UserRequest; onAns
   )
 }
 
-// A soft spring: about 1.5% past, then settling.
-const DROP_SPRING =
-  'linear(0, 0.0427, 0.1438, 0.2719, 0.4062, 0.5337, 0.647, 0.7429, 0.8208, 0.8817, 0.9276, 0.9609, 0.984, 0.9991, 1.0083, 1.0131, 1.015, 1.015, 1.0137, 1.0119, 1.0099, 1.0079, 1.0061, 1.0045, 1.0032, 1.0022, 1.0014, 1.0008, 1.0004, 1.0001, 1)'
-
-/** A card arriving under the build bar: from `from` px above, behind the bar, to its place. */
+/** A card arriving under the build bar: from `from` px above, behind the bar, to its place,
+ *  coming into focus on the way. The blur has its own smooth ease (the spring's overshoot would
+ *  push it below zero) and clears just as the card settles. */
 function dropIn(card: HTMLElement, from: number, delay: number): void {
   card.animate(
     [
@@ -272,6 +271,55 @@ function dropIn(card: HTMLElement, from: number, delay: number): void {
     ],
     { duration: 900, delay, easing: DROP_SPRING, fill: 'backwards' },
   )
+  card.animate([{ filter: 'blur(24px)' }, { filter: 'blur(0)' }], {
+    duration: 850,
+    delay,
+    easing: 'cubic-bezier(0.4, 0, 0.6, 1)',
+    fill: 'backwards',
+  })
+}
+
+/** An answered card leaving: back up `to` px to the top of the screen, behind the bar, growing
+ *  a little small and blurring away as it goes (drop-in in reverse). */
+function leaveUp(card: HTMLElement, to: number, done: () => void): void {
+  card.animate(
+    [
+      { transform: 'none', filter: 'blur(0)', opacity: 1 },
+      { offset: 0.7, opacity: 1 },
+      { transform: `translateY(${to}px) scale(0.96)`, filter: 'blur(24px)', opacity: 0 },
+    ],
+    { duration: 550, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' },
+  ).onfinish = done
+}
+
+/** The cards to show for the pending requests: answered ones stay in place, leaving, when
+ *  `animate`; new ones arrive where `pending` has them. */
+function withLeaving(
+  cards: { r: UserRequest; leaving: boolean }[],
+  pending: UserRequest[],
+  animate: boolean,
+): { r: UserRequest; leaving: boolean }[] {
+  const ids = new Set(pending.map((r) => r.id))
+  const next = pending.map((r) => ({ r, leaving: false }))
+  if (!animate) return next
+  cards.forEach((c, i) => {
+    if (ids.has(c.r.id)) return
+    // After the nearest card above it that's still there, or at the very top.
+    const above = cards.slice(0, i).reverse().find((a) => next.some((n) => n.r.id === a.r.id))
+    next.splice(above ? next.findIndex((n) => n.r.id === above.r.id) + 1 : 0, 0, { r: c.r, leaving: true })
+  })
+  return next
+}
+
+/** A card that has moved (`by` px, from where it was to where it is now) glides there rather
+ *  than jumping. Added to any glide it's already on, so a second move mid-way doesn't jump
+ *  either. */
+function glide(card: HTMLElement, by: number): void {
+  card.animate([{ transform: `translateY(${by}px)` }, { transform: 'none' }], {
+    duration: 500,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    composite: 'add',
+  })
 }
 
 /** A build that has just started and reported nothing yet. */
@@ -280,24 +328,6 @@ function startingJob(workflowId: string): JobSnapshot {
 }
 
 // ---------- activity ----------
-
-function EventList({ events, start }: { events: JobEvent[]; start: number }) {
-  return (
-    <ol className="activity">
-      {events.map((e) => (
-        <li key={e.i}>
-          <span className={`dot dot-${e.kind}`} aria-hidden="true" />
-          <div className="event-body">
-            <div className="event-label">{e.label}</div>
-            {e.detail && <div className="mono muted small event-detail">{e.detail}</div>}
-            {e.image && <img className="event-shot" src={`/api${e.image}`} alt={e.label} loading="lazy" />}
-          </div>
-          <span className="mono muted small event-time">+{formatDuration(e.ts - start)}</span>
-        </li>
-      ))}
-    </ol>
-  )
-}
 
 /** The live job: what the agent is doing right now, and what it needs from the user. */
 function JobPanel({
@@ -322,22 +352,46 @@ function JobPanel({
   // Newest first: a new card arrives at the top and the others make room below it.
   const pending = job.requests.filter((r) => r.status === 'pending').reverse()
 
+  // While building, an answered card doesn't vanish: it stays where it was, marked leaving,
+  // until it has flown back up under the bar (leaveUp), then it's dropped.
+  const [cards, setCards] = useState(() => pending.map((r) => ({ r, leaving: false })))
+  const pendingKey = pending.map((r) => r.id).join()
+  const [seenKey, setSeenKey] = useState(pendingKey)
+  if (pendingKey !== seenKey) {
+    setSeenKey(pendingKey)
+    setCards(withLeaving(cards, pending, spring && !prefersReducedMotion()))
+  }
+  const fresh = new Map(pending.map((r) => [r.id, r]))
+  const gone = useCallback((id: string) => setCards((cs) => cs.filter((c) => !(c.leaving && c.r.id === id))), [])
+
   // When a card arrives or leaves, the ones that move glide to their new place (FLIP: from
   // where they were to where they are now) rather than jumping. While building, a new card
-  // drops in from the very top of the screen, behind the bar, like an iOS notification.
+  // drops in from the very top of the screen, behind the bar, like an iOS notification, and
+  // an answered one flies back up there.
   const list = useRef<HTMLDivElement>(null)
   const tops = useRef(new Map<string, number>())
+  const resized = useRef<ResizeObserver | null>(null) // watching the cards' sizes (below)
   useLayoutEffect(() => {
     const el = list.current
     if (!el) return
     const motion = !prefersReducedMotion()
     const parent = (el.offsetParent as HTMLElement | null) ?? document.body
     const parentTop = parent.getBoundingClientRect().top - parent.scrollTop
+    const children = Array.from(el.children) as HTMLElement[]
+    // Lift leaving cards out of the flow first, so the others close the gap (and glide there).
+    for (const child of children) {
+      if (child.dataset.leaving === undefined || child.style.position === 'absolute') continue
+      const { offsetTop: top, offsetLeft: left, offsetWidth: width } = child
+      Object.assign(child.style, { position: 'absolute', top: `${top}px`, left: `${left}px`, width: `${width}px`, zIndex: '0' })
+      leaveUp(child, -(parentTop + top), () => gone(child.dataset.key!))
+    }
     const next = new Map<string, number>()
+    // The first cards to arrive while building wait for the step in the middle to blur away.
     let arriving = 0
-    for (const child of Array.from(el.children) as HTMLElement[]) {
+    const clear = spring && tops.current.size === 0 ? FEED_OUT_MS : 0
+    for (const child of children) {
       const key = child.dataset.key
-      if (!key) continue
+      if (!key || child.dataset.leaving !== undefined) continue
       const top = child.offsetTop // where it lands; its own transforms don't change this
       next.set(key, top)
       const before = tops.current.get(key)
@@ -345,54 +399,88 @@ function JobPanel({
       if (before === undefined) {
         // From the top of the screen (how far up that is from where it lands), a little
         // small, growing as it glides down, on one soft spring; one after another.
-        if (spring) dropIn(child, -(parentTop + top), arriving++ * 80)
+        if (spring) dropIn(child, -(parentTop + top), clear + arriving++ * 80)
       } else if (before !== top) {
-        child.animate([{ transform: `translateY(${before - top}px)` }, { transform: 'none' }], {
-          duration: 500,
-          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-        })
+        glide(child, before - top)
       }
     }
     tops.current = next
+    for (const child of children) resized.current?.observe(child)
   })
 
+  // A card changing size on its own (an answer making it shorter, say) moves the cards
+  // around it, and itself, since they're centred: they glide there too, not only when the
+  // list re-renders.
+  useEffect(() => {
+    const el = list.current
+    if (!el || prefersReducedMotion()) return
+    const watch = new ResizeObserver(() => {
+      for (const child of Array.from(el.children) as HTMLElement[]) {
+        const key = child.dataset.key
+        if (!key || child.dataset.leaving !== undefined) continue // leaving: leaveUp has it
+        const before = tops.current.get(key)
+        if (before === undefined) continue // just arrived: dropIn has it
+        const top = child.offsetTop
+        if (before !== top) glide(child, before - top)
+        tops.current.set(key, top)
+      }
+    })
+    resized.current = watch
+    for (const child of Array.from(el.children)) watch.observe(child)
+    return () => {
+      watch.disconnect()
+      resized.current = null
+    }
+  }, [])
+
   return (
-    <div className={`job${spring ? ' springing' : ''}`} ref={list}>
-      {withCard && (
-        <div data-key="progress">
-          <BuildCard job={job} onStop={onStop} onPause={onPause} />
-        </div>
-      )}
-
-      {pending.map((r) => (
-        <div key={r.id} data-key={r.id}>
-          <RequestCard request={r} onAnswer={(approved, feedback) => onAnswer(r, approved, feedback)} />
-        </div>
-      ))}
-
-      {!running && job.result?.error != null && (
-        <section data-key="result"  className={`alert${job.result.review ? "" : " alert-error"}`} role="alert">
-          <div className="alert-body">
-            <h2>{job.result.review ? 'Needs your review' : job.kind === 'build' ? 'The build needs a human' : 'This run needs a human'}</h2>
-            {job.result.review === true && <p className="small">The workflow stopped on purpose: this needs your decision, so nothing was healed or retried.</p>}
-            <p className="mono small">{String(job.result.error)}</p>
+    <>
+      <div className={`job${spring ? ' springing' : ''}`} ref={list}>
+        {withCard && (
+          <div data-key="progress">
+            <BuildCard job={job} onStop={onStop} onPause={onPause} />
           </div>
-        </section>
-      )}
+        )}
 
-      <section data-key="activity" className={`card events${open ? ' open' : ''}`} aria-label="Activity">
-        <button type="button" className="events-bar" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <span className="events-bar-name">Activity</span>
-          <span className="events-bar-latest muted">{job.events.length} events</span>
-          <span className="events-bar-chevron" aria-hidden="true">
-            <svg width="10" height="10" viewBox="0 0 10 10">
-              <path d="M3.5 2 6.5 5 3.5 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        </button>
-        {open && <EventList events={job.events} start={job.started} />}
-      </section>
-    </div>
+        {cards.map(({ r: last, leaving }) => {
+          const r = fresh.get(last.id) ?? last
+          return (
+            <div key={r.id} data-key={r.id} data-leaving={leaving || undefined} inert={leaving}>
+              <RequestCard request={r} onAnswer={(approved, feedback) => onAnswer(r, approved, feedback)} />
+            </div>
+          )
+        })}
+
+        {!running && job.result?.error != null && (
+          <section data-key="result"  className={`alert${job.result.review ? "" : " alert-error"}`} role="alert">
+            <div className="alert-body">
+              <h2>{job.result.review ? 'Needs your review' : job.kind === 'build' ? 'The build needs a human' : 'This run needs a human'}</h2>
+              {job.result.review === true && <p className="small">The workflow stopped on purpose: this needs your decision, so nothing was healed or retried.</p>}
+              <p className="mono small">{String(job.result.error)}</p>
+            </div>
+          </section>
+        )}
+
+        {!spring && (
+          <section data-key="activity" className="card events" aria-label="Activity">
+            <button type="button" className="events-bar" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
+              <span className="events-bar-name">Activity</span>
+              <span className="events-bar-latest muted">{job.events.length} events</span>
+              <span className="events-bar-chevron" aria-hidden="true">
+                <svg width="10" height="10" viewBox="0 0 10 10">
+                  <path d="M3.5 2 6.5 5 3.5 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </button>
+            <ActivityPopup open={open} events={job.events} start={job.started} onClose={() => setOpen(false)} />
+          </section>
+        )}
+      </div>
+
+      {/* While building, what it's doing sits in the middle of the page instead, out of the
+          cards' way until they've all been answered and flown off. */}
+      {spring && <StepFeed job={job} away={cards.length > 0} />}
+    </>
   )
 }
 
@@ -559,8 +647,16 @@ export function WorkflowView({
   )
 
   // The cards under the bar spring in when it settles (with its progress starting), even if
-  // the workflow itself hasn't loaded yet.
-  const panel = shown && !arriving && (
+  // the workflow itself hasn't loaded yet. They mount a couple of frames after the bar takes
+  // over, so the frame where the flight hands off to the bar is just that swap, not the
+  // panel's mount and measuring as well.
+  const [held, setHeld] = useState(arriving)
+  useEffect(() => {
+    if (arriving) return setHeld(true)
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setHeld(false))))
+    return () => cancelAnimationFrame(frame)
+  }, [arriving])
+  const panel = shown && !arriving && !held && (
     <JobPanel job={shown} onAnswer={answer} onStop={stop} onPause={pause} spring={building} withCard={!building} />
   )
 

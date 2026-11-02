@@ -29,8 +29,46 @@ function usePausedSweep(list: RefObject<HTMLOListElement | null>, paused: boolea
   }, [list, paused])
 }
 
-/** A tool call as a person would describe it. */
-export function friendly(e: JobEvent): string {
+/** A tool call as a person would describe it. (The full activity log keeps the raw text.)
+ *  `events`, the job's: steps on its own scripts take turns through SCRIPT_LINES by where
+ *  they fall among them, so each window (and every re-render) shows the same line for one. */
+export function friendly(e: JobEvent, events?: JobEvent[]): string {
+  const text = describe(e)
+  // Its own plumbing (asking the person, the scripts it writes) isn't worth naming.
+  if (ASKS.test(text)) return 'Clarifying…'
+  if (SCRIPT.test(text)) return SCRIPT_LINES[(events ? scriptTurn(events, e) : 0) % SCRIPT_LINES.length]!
+  return text.replace(/\.md$/i, '') // "Looking at notes", not notes.md
+}
+
+const ASKS = /ask_?user/i // droid's AskUser
+const SCRIPT = /\.mjs\b/
+/** What a step on one of its own scripts says, in turn. */
+const SCRIPT_LINES = [
+  'Putting the pieces together…',
+  'Connecting the dots…',
+  'Fitting it all together…',
+  'Lining things up…',
+  'Shaping the workflow…',
+  'Sorting out the details…',
+  'Tightening things up…',
+  'Checking the fit…',
+  'Smoothing the rough edges…',
+  'Polishing the steps…',
+]
+
+// Per job snapshot (a new array each poll): each script step's place among them.
+const turns = new WeakMap<JobEvent[], Map<number, number>>()
+function scriptTurn(events: JobEvent[], e: JobEvent): number {
+  let order = turns.get(events)
+  if (!order) {
+    order = new Map()
+    for (const ev of events) if (SCRIPT.test(describe(ev)) && !ASKS.test(describe(ev))) order.set(ev.i, order.size)
+    turns.set(events, order)
+  }
+  return order.get(e.i) ?? 0
+}
+
+function describe(e: JobEvent): string {
   const label = e.label.replace(/^(Builder|Healer|Extractor agent): /, '')
   if (e.kind === 'ui' || e.kind === 'step' || e.kind === 'ok' || e.kind === 'fail' || e.kind === 'info') return e.label
   if (/^says$/.test(label)) return e.detail
@@ -47,9 +85,14 @@ export function friendly(e: JobEvent): string {
 // Agent calls that only organise its own work; not worth showing as "what it's doing".
 const BOOKKEEPING = /: (TodoWrite|Script|ToolSearch|(retronaut|locallink)___\w+)( error)?$/
 
+/** Everything it did that a person would care about, oldest first. */
+export function allSteps(job: JobSnapshot): JobEvent[] {
+  return job.events.filter((e) => !BOOKKEEPING.test(e.label) && (e.kind !== 'info' || e.label.startsWith('Test')))
+}
+
 /** The last few things it did that a person would care about. */
 export function recentSteps(job: JobSnapshot, count: number): JobEvent[] {
-  return job.events.filter((e) => !BOOKKEEPING.test(e.label) && (e.kind !== 'info' || e.label.startsWith('Test'))).slice(-count)
+  return allSteps(job).slice(-count)
 }
 
 /** What the build or run is doing, in a couple of words. */
@@ -78,6 +121,25 @@ export function stepProgress(job: JobSnapshot, expected: number | null): string 
 export function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds))
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/** The full log: each event as it was recorded, with its detail and any screenshot. */
+export function EventList({ events, start }: { events: JobEvent[]; start: number }) {
+  return (
+    <ol className="activity">
+      {events.map((e) => (
+        <li key={e.i}>
+          <span className={`dot dot-${e.kind}`} aria-hidden="true" />
+          <div className="event-body">
+            <div className="event-label">{e.label}</div>
+            {e.detail && <div className="mono muted small event-detail">{e.detail}</div>}
+            {e.image && <img className="event-shot" src={`/api${e.image}`} alt={e.label} loading="lazy" />}
+          </div>
+          <span className="mono muted small event-time">+{formatDuration(e.ts - start)}</span>
+        </li>
+      ))}
+    </ol>
+  )
 }
 
 /**
@@ -142,8 +204,10 @@ export function BuildCard({
         </div>
         <div className="build-text">
           <h2>{title}</h2>
+          {/* The bar leaves what it's doing to the step in the middle of the page (StepFeed). */}
           <p className="muted small">
-            {latest ? friendly(latest) : 'Starting the agent…'} · <span className="timer">{formatDuration(elapsed)}</span>
+            {!bar && <>{latest ? friendly(latest, job.events) : 'Starting the agent…'} · </>}
+            <span className="timer">{formatDuration(elapsed)}</span>
           </p>
         </div>
         {running && (onStop || onPause) && (
@@ -177,7 +241,7 @@ export function BuildCard({
             {recent.map((e) => (
               <li key={e.i}>
                 <span className={`dot dot-${e.kind}`} aria-hidden="true" />
-                <span className="hint-text">{friendly(e)}</span>
+                <span className="hint-text">{friendly(e, job.events)}</span>
               </li>
             ))}
           </ul>
