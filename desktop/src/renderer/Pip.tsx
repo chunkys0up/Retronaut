@@ -25,24 +25,35 @@ function segments(job: LiveJob): { count: number; at: number } | null {
   return { count: Math.max(job.expected_steps, at), at: Math.max(0, at - 1) }
 }
 
-/** A ring of `count` segments around the top-right corner: done ones lit, the current one glowing. */
-function ProgressRing({ count, at, paused }: { count: number; at: number; paused: boolean }) {
+/**
+ * A ring of `count` segments around the top-right corner: done ones lit, the current one
+ * glowing. `full` (a run passed): one solid ring instead, no segments, drawn in round from
+ * the top over a plain track (Shell.css).
+ */
+function ProgressRing({ count, at, paused, full }: { count: number; at: number; paused: boolean; full: boolean }) {
   const gap = 5 // of the ring's 100, between segments
   const length = 100 / count - gap
   return (
-    <svg className="pip-ring" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-      {Array.from({ length: count }, (_, i) => (
-        <circle
-          key={i}
-          className={i < at ? 'done' : i === at ? `now${paused ? ' held' : ''}` : ''}
-          cx="10"
-          cy="10"
-          r="8"
-          pathLength="100"
-          strokeDasharray={`${length} ${100 - length}`}
-          strokeDashoffset={-(i * (100 / count) + gap / 2)}
-        />
-      ))}
+    <svg className={`pip-ring${full ? ' full' : ''}`} width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+      {full ? (
+        <>
+          <circle cx="10" cy="10" r="8" />
+          <circle className="done" cx="10" cy="10" r="8" pathLength="100" />
+        </>
+      ) : (
+        Array.from({ length: count }, (_, i) => (
+          <circle
+            key={i}
+            className={i < at ? 'done' : i === at ? `now${paused ? ' held' : ''}` : ''}
+            cx="10"
+            cy="10"
+            r="8"
+            pathLength="100"
+            strokeDasharray={`${length} ${100 - length}`}
+            strokeDashoffset={-(i * (100 / count) + gap / 2)}
+          />
+        ))
+      )}
     </svg>
   )
 }
@@ -421,8 +432,11 @@ export function Pip() {
   }, [shown, leaving])
 
   if (!job) return null
-  const progress = stepProgress(job, job.expected_steps)
   const ring = segments(job)
+  // A run that passed reads as every step done, whatever step it last reported.
+  const reported = stepProgress(job, job.expected_steps)
+  const total = ring?.count ?? Number(/^Step (\d+)/.exec(reported ?? '')?.[1] ?? 0)
+  const progress = held.current.finished && total ? `Step ${total}/${total}` : reported
   // The window ignores the mouse except over the activity chip, which takes clicks (its Stop).
   return (
     <div className="pip-window">
@@ -431,7 +445,14 @@ export function Pip() {
           <div className="pip-title">
             <span className="pip-name">{jobTitle(job)}</span>
             {progress && <span className="pip-count">{progress}</span>}
-            {ring && <ProgressRing count={ring.count} at={ring.at} paused={Boolean(job.paused) || !live(job.status)} />}
+            {ring && (
+              <ProgressRing
+                count={ring.count}
+                at={ring.at}
+                paused={Boolean(job.paused) || !live(job.status)}
+                full={held.current.finished} // with the green chip, solid and green (Shell.css)
+              />
+            )}
           </div>
           <div className="pip-panel">
             <Steps jobId={job.job_id} steps={recentSteps(job, KEEP * 3)} events={job.events} />

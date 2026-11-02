@@ -57,7 +57,7 @@
 
   --shadow-sm: none;
   --shadow: none;
-  --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.2);
   --radius: 12px;
   --radius-md: 8px;
   --radius-sm: 4px;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import { BuildCard, EventList } from './BuildCard'
 import { DROP_SPRING, prefersReducedMotion, type Intro } from './Flight'
@@ -65,7 +65,8 @@ function PlanSteps({ plan }: { plan: Plan }) {
   )
 }
 
-/** Each step's detail is cut to one line; its read button opens the whole step in a Popup. */
+/** Each step's detail is cut to one line; the step (anywhere on it, or its read button, which
+ *  keyboards and screen readers use) opens the whole step in a Popup. */
 function PlanList({ plan }: { plan: Plan }) {
   const [reading, setReading] = useState<number | null>(null)
   const step = reading === null ? null : plan.steps[reading]
@@ -73,7 +74,7 @@ function PlanList({ plan }: { plan: Plan }) {
     <>
       <ol className="plan-steps">
         {plan.steps.map((s, i) => (
-          <li key={i}>
+          <li key={i} onClick={() => setReading(i)}>
             <span className="plan-num">{i + 1}</span>
             <div className="plan-body">
               <span className={`how how-${s.how}`}>{HOW_LABEL[s.how] ?? s.how}</span>
@@ -513,6 +514,9 @@ function JobPanel({
   )
 }
 
+/** The workflow bar's tabs: an overview, the plan and its script, and the runs. */
+const WF_TABS = ['Overview', 'Workflow details', 'Run history']
+
 function RunRow({ wfId, run }: { wfId: string; run: RunSummary }) {
   const [detail, setDetail] = useState<JobSnapshot | null>(null)
   const [open, setOpen] = useState(false)
@@ -556,6 +560,8 @@ export function WorkflowView({
   const [job, setJob] = useState<JobSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showScript, setShowScript] = useState(false)
+  const [tab, setTab] = useState(0)
+  const page = useRef<HTMLDivElement>(null)
 
   const loadWorkflow = useCallback(async () => {
     const next = await api<Workflow>(`/workflows/${id}`)
@@ -689,6 +695,32 @@ export function WorkflowView({
     <JobPanel job={shown} onAnswer={answer} onStop={stop} onPause={pause} spring={building} withCard={!building} />
   )
 
+  const built = !building && wf !== null
+  // What scrolls up under the workflow bar fades out as the full log does under the build
+  // bar (Shell.css .step-list): clear from 20px under the window's top, whole again 16px
+  // under the bar. The page scrolls with the main area, the bar pinned in it, so the fade is
+  // kept where the window's top and the bar are as it scrolls (Shell.css .fade-under-bar).
+  useLayoutEffect(() => {
+    const el = page.current
+    const main = el?.closest('.main')
+    const bar = main?.querySelector('.wf-bar')
+    if (!built || !el || !main || !bar) return
+    const place = () => {
+      const top = el.getBoundingClientRect().top
+      el.style.setProperty('--fade-from', `${main.getBoundingClientRect().top + 20 - top}px`)
+      el.style.setProperty('--fade-to', `${bar.getBoundingClientRect().bottom + 16 - top}px`)
+    }
+    place()
+    main.addEventListener('scroll', place, { passive: true })
+    const resized = new ResizeObserver(place)
+    resized.observe(bar)
+    resized.observe(el)
+    return () => {
+      main.removeEventListener('scroll', place)
+      resized.disconnect()
+    }
+  }, [built])
+
   if (!wf) {
     return (
       <>
@@ -702,78 +734,118 @@ export function WorkflowView({
   }
 
   const busy = live(job?.status)
+  // Once built, the title, the prompt, its status and Run now sit in a glass bar across the
+  // top, as the build's progress did, with tabs along its bottom edge where the progress was.
+  const head = !building && (
+    <div className="build-bar-wrap">
+      <section className="build-bar wf-bar">
+        <div className="build-bar-inner">
+          <header className="view-head">
+            <div className="view-title">
+              <h1 title={wf.title}>{wf.title}</h1>
+            </div>
+            <div className="view-actions">
+              <span className={`badge badge-wf-${wf.status}`} role="status">
+                <span className="badge-dot" aria-hidden="true" />
+                {busy && job?.kind === 'run' ? 'Running' : STATUS_LABEL[wf.status]}
+              </span>
+              {wf.script && (
+                <button type="button" onClick={run} disabled={busy}>
+                  {busy && job?.kind === 'run' && <span className="spinner" aria-hidden="true" />}
+                  Run now
+                </button>
+              )}
+            </div>
+          </header>
+        </div>
+        <div className="wf-tabs" role="tablist" aria-label="Workflow sections">
+          {WF_TABS.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              role="tab"
+              id={`wf-tab-${i}`}
+              aria-controls="wf-tab-panel"
+              aria-selected={tab === i}
+              className={`wf-tab${tab === i ? ' on' : ''}`}
+              onClick={() => setTab(i)}
+            >
+              {label}
+            </button>
+          ))}
+          {/* One underline, sliding to whichever tab is chosen. */}
+          <span className="wf-tab-line" aria-hidden="true" style={{ '--tab': tab, '--tabs': WF_TABS.length } as CSSProperties} />
+        </div>
+      </section>
+    </div>
+  )
   return (
     <>
       {bar}
-      <div className={`page workflow${building ? ' is-building' : ''}`}>
-        {!building && (
-        <header className="view-head">
-          <div className="view-title">
-            <h1>{wf.title}</h1>
-            <p className="muted goal">“{wf.goal}”</p>
-          </div>
-          <div className="view-actions">
-            <span className={`badge badge-wf-${wf.status}`} role="status">
-              <span className="badge-dot" aria-hidden="true" />
-              {busy && job?.kind === 'run' ? 'Running' : STATUS_LABEL[wf.status]}
-            </span>
-            {wf.status !== 'building' && wf.script && (
-              <button type="button" onClick={run} disabled={busy}>
-                {busy && job?.kind === 'run' && <span className="spinner" aria-hidden="true" />}
-                Run now
-              </button>
-            )}
-          </div>
-        </header>
-        )}
+      {head}
+      <div ref={page} className={`page workflow${building ? ' is-building' : ' fade-under-bar'}`}>
 
         {error && <p className="request-error">{error}</p>}
 
         {panel}
 
+        {/* What's running stays above whichever tab is open; the tab's own content under it. */}
         {wf.status !== 'building' && (
-          <div className="wf-grid">
-            <section className="card">
-              <div className="card-head">
-                <h2>How it works</h2>
-                <span className="muted small">
-                  {[...wf.apps.map((a) => a.app), ...wf.connectors.map((c) => c[0].toUpperCase() + c.slice(1))].join(' · ')}
-                </span>
-              </div>
-              {wf.plan ? <PlanSteps plan={wf.plan} /> : <p className="muted small">{wf.note || 'No plan was recorded.'}</p>}
-              {wf.script && (
-                <div className="script">
-                  <button type="button" className="link" onClick={() => setShowScript(!showScript)}>
-                    {showScript ? 'Hide the script' : 'Show the script'}
-                  </button>
-                  {showScript && <pre className="code">{wf.script}</pre>}
+          <div className="wf-tab-panel" id="wf-tab-panel" role="tabpanel" aria-labelledby={`wf-tab-${tab}`}>
+            {tab === 0 && (
+              <section className="card">
+                <div className="card-head">
+                  <h2>Prompt</h2>
                 </div>
-              )}
-            </section>
+                <p className="muted goal">“{wf.goal}”</p>
+              </section>
+            )}
 
-            <section className="card">
-              <div className="card-head">
-                <h2>Runs</h2>
-                <span className="muted small">
-                  {lastRun ? `Last run ${when(lastRun.started)}` : 'Not run yet'}
-                  {wf.heals > 0 && ` · healed itself ${wf.heals}×`}
-                </span>
-              </div>
-              {wf.runs.length === 0 ? (
-                <p className="muted small">No runs yet.</p>
-              ) : (
-                <ul className="runs">
-                  {wf.runs.map((r) => (
-                    <RunRow key={r.job_id} wfId={wf.id} run={r} />
-                  ))}
-                </ul>
-              )}
-              {!busy && (
-                <button type="button" className="link danger" onClick={remove}>
-                  Delete workflow
-                </button>
-              )}
-            </section>
+            {tab === 1 && (
+              <section className="card">
+                <div className="card-head">
+                  <h2>How it works</h2>
+                  <span className="muted small">
+                    {[...wf.apps.map((a) => a.app), ...wf.connectors.map((c) => c[0].toUpperCase() + c.slice(1))].join(' · ')}
+                  </span>
+                </div>
+                {wf.plan ? <PlanSteps plan={wf.plan} /> : <p className="muted small">{wf.note || 'No plan was recorded.'}</p>}
+                {wf.script && (
+                  <div className="script">
+                    <button type="button" className="link" onClick={() => setShowScript(!showScript)}>
+                      {showScript ? 'Hide the script' : 'Show the script'}
+                    </button>
+                    {showScript && <pre className="code">{wf.script}</pre>}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {tab === 2 && (
+              <section className="card">
+                <div className="card-head">
+                  <h2>Runs</h2>
+                  <span className="muted small">
+                    {lastRun ? `Last run ${when(lastRun.started)}` : 'Not run yet'}
+                    {wf.heals > 0 && ` · healed itself ${wf.heals}×`}
+                  </span>
+                </div>
+                {wf.runs.length === 0 ? (
+                  <p className="muted small">No runs yet.</p>
+                ) : (
+                  <ul className="runs">
+                    {wf.runs.map((r) => (
+                      <RunRow key={r.job_id} wfId={wf.id} run={r} />
+                    ))}
+                  </ul>
+                )}
+                {!busy && (
+                  <button type="button" className="link danger" onClick={remove}>
+                    Delete workflow
+                  </button>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>

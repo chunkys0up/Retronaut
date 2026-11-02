@@ -504,6 +504,92 @@ button.brand-button:hover:not(:disabled) {
   margin: 0 auto;
 }
 
+/* ---------- the workflow bar ----------
+   Once built, the workflow's title, prompt, status and Run now sit in the same glass bar,
+   with its bottom border (the bar's full width); tabs run along that edge where the build's
+   progress did, sharing the header's width, and one accent underline slides along the
+   border to the chosen one. */
+/* The bar keeps one height: room for a two-line title (24px at 1.25, .view-head h1), a
+   longer one cut to two lines with an ellipsis, a shorter one centred in that room with
+   the status and Run now beside it. */
+.wf-bar .view-head {
+  min-height: calc(2 * 24px * 1.25);
+  align-items: center;
+}
+.wf-bar .view-head h1 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.wf-bar .build-bar-inner {
+  padding-bottom: 18px; /* with the tabs' own 14px above their labels, 32px under the header */
+}
+.wf-tabs {
+  position: relative;
+  z-index: 1; /* over the bar's bottom border */
+  display: flex;
+  /* As wide as the header above (.build-bar-inner: 1180px less its 40px sides). */
+  width: min(1100px, calc(100% - 80px));
+  margin: 0 auto;
+}
+.wf-tab {
+  flex: 1 1 0;
+  height: auto;
+  /* Each tab's whole band, from under the header to the border, takes its clicks (the bar
+     around it drags the window), so the room above the label is the tab's own. */
+  padding: 22px 14px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+/* Scoped under .wf-tabs to outrank App.css's button:hover fill. */
+.wf-tabs .wf-tab:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
+.wf-tab.on {
+  color: var(--text);
+}
+/* What scrolls up under the workflow bar fades out the way the full log does under the
+   build bar (.step-list's top edge, eased in steps), between --fade-from (20px under the
+   window's top) and --fade-to (16px under the bar), which WorkflowView keeps in place as the
+   page scrolls. Dialogs opened from the page sit in the top layer, so it doesn't fade them. */
+.page.workflow.fade-under-bar {
+  --fade-top-from: var(--fade-from, -100vh);
+  --fade-top-to: var(--fade-to, -100vh);
+  --fade: linear-gradient(to bottom,
+    rgba(0, 0, 0, 0.000) var(--fade-top-from),
+    rgba(0, 0, 0, 0.043) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.125),
+    rgba(0, 0, 0, 0.156) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.25),
+    rgba(0, 0, 0, 0.316) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.375),
+    rgba(0, 0, 0, 0.500) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.5),
+    rgba(0, 0, 0, 0.684) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.625),
+    rgba(0, 0, 0, 0.844) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.75),
+    rgba(0, 0, 0, 0.957) calc(var(--fade-top-from) + (var(--fade-top-to) - var(--fade-top-from)) * 0.875),
+    rgba(0, 0, 0, 1.000) var(--fade-top-to));
+  -webkit-mask-image: var(--fade);
+  mask-image: var(--fade);
+}
+.wf-tab-line {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: calc(100% / var(--tabs));
+  height: 3px;
+  background: var(--accent);
+  transform: translateX(calc(var(--tab) * 100%));
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
 /* The cards under the build bar: they drop in from the very top of the screen, behind the
    bar (WorkflowView's dropIn), to the window's middle line, where the step they cover was
    (StepFeed): the list keeps as much room below it as the bar and the page's padding take
@@ -822,7 +908,7 @@ dialog.accounts {
   box-shadow: var(--shadow-float);
 }
 dialog.accounts::backdrop {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.3);
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
 }
@@ -1346,7 +1432,7 @@ dialog.log-popup::backdrop {
   display: grid;
   place-items: center;
   padding: 40px 64px;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.3);
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
   animation: log-popup-in 0.25s ease-out;
@@ -1514,14 +1600,27 @@ dialog.log-popup::backdrop {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 /* Each step: its chip over a one-line title and a one-line detail, between its number
-   and the read button (PlanList's Popup), both centred. */
+   and the read button (PlanList's Popup), both centred. The whole step opens it: hovered,
+   it lights up in a rounded box reaching a little past its contents (the padding, taken
+   back by the margin, so nothing moves; 8px above and below keeps the steps 16px apart),
+   and its read button brightens with it. */
 .plan-steps li {
   display: flex;
   align-items: center;
   gap: 14px;
+  margin: 0 -8px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.plan-steps li:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.plan-steps li:hover button.plan-read {
+  color: var(--text);
 }
 .plan-num {
   flex: none;
@@ -1701,11 +1800,11 @@ input.feedback {
 
 /* ---------- a saved workflow ---------- */
 
-.wf-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+/* A tab's content under the workflow bar: one card at a time, the page's full width. */
+.wf-tab-panel {
+  display: flex;
+  flex-direction: column;
   gap: 18px;
-  align-items: start;
 }
 .runs {
   list-style: none;
@@ -1912,8 +2011,19 @@ body.pip-body {
 .pip:has(.pip-activity.open.paused) {
   --ring: #ffce1b;
 }
-.pip:has(.pip-activity.open.finished) {
+/* Full, as a run passes: one solid ring, green at once, not when the green chip has taken
+   over from the orange or yellow one. */
+.pip-ring.full {
   --ring: #16a34a;
+}
+/* Drawn in, clockwise from the top (the ring is turned a quarter back), empty to whole. */
+.pip-ring.full circle.done {
+  stroke-dasharray: 100 100;
+  animation: pip-ring-fill 0.6s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+@keyframes pip-ring-fill {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
 }
 /* The title and the steps: the card's whole height while the chip is closed. */
 .pip-main {
