@@ -55,8 +55,8 @@ function PlanSteps({ plan }: { plan: Plan }) {
           </div>
           <div className="muted small">
             {plan.backup.method === 'none'
-              ? `${plan.backup.detail} Tests will change your data with no automatic undo.`
-              : `${plan.backup.detail} If a test fails, Retronaut restores this backup.`}
+              ? `${plan.backup.detail} With no automatic undo, the builder reverses each test by hand.`
+              : `${plan.backup.detail} Retronaut restores this backup after each test, so your first run does the work.`}
           </div>
         </div>
       )}

@@ -4,14 +4,19 @@
  * Build: the builder agent asks for the apps and accounts it needs, explores them,
  * proposes a plan (the user approves it), and writes workflow.mjs. The engine then
  * test-runs the script; a failure goes back to the same session with the failing
- * step and a screenshot, up to MAX_FIXES times. A passing script is installed.
+ * step and a screenshot, up to MAX_FIXES times. A passing test is undone (restore.mjs),
+ * so the user's first real run does the work. Then a final check before it's installed:
+ * the data is backed up, the script runs once more from a fresh folder holding only what
+ * gets installed, as a real run (not a test), and the backup is put back. A failure there
+ * is what the user's first run would have hit, so it goes to the builder to fix too. With
+ * no backup, the builder undoes each passing run by hand.
  *
  * Run: the saved script runs with no agent. If a step fails, a healing agent gets
  * the failure, works out what changed (an app update that moved a button, a renamed
  * window, ...), fixes the script, and the engine runs it again.
  */
 
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -97,7 +102,19 @@ exactly how to do it, then write that down as code.
      if the data doesn't say, throw with a clear message.
    Run it yourself with node if that helps (node backup.mjs first), then finish your
    turn with a short summary. Retronaut then backs up the data, runs it as the test
-   run, and tells you the result; if it fails, Retronaut restores the backup first.
+   run, and tells you the result. Either way, Retronaut restores the backup after it:
+   a test's changes never stay, the user's first real run does the work.
+6. Once the test passes, Retronaut runs a final check, the way the user's first run will
+   go: it backs up, runs workflow.mjs from a fresh folder holding only workflow.mjs,
+   state.json, backup.mjs, restore.mjs and retronaut.mjs, with isTest false, on the
+   user's data as it was before the test (the app's windows as the test left them), then
+   restores the backup. So:
+   - keep everything the script needs inside workflow.mjs: no helper files, and no paths
+     into this working folder (it's deleted when the build ends);
+   - a run with nothing new to do (every item already in state.json) succeeds;
+   - start from whatever the app shows (bring it forward, close dialogs a run left open),
+     not from the screen you happened to leave it on;
+   - isTest must not change what the workflow does.
 
 ## Backups
 Testing changes the user's real data. So before anything that could change it, the data
@@ -161,6 +178,45 @@ const NO_BACKUP = `backup.mjs and restore.mjs aren't in the working folder, and 
 method. Write them as described under "Backups", run the round trip once (node backup.mjs,
 then node restore.mjs), then finish your turn.`
 
+const FINAL_CHECK_FAILED = `The test run passed, but Retronaut's final check failed. The final check runs
+workflow.mjs the way the user's runs will: from a fresh folder holding only workflow.mjs,
+state.json, backup.mjs, restore.mjs and retronaut.mjs (nothing else from the working
+folder), with isTest false, right after the test was undone: on the user's data as it was
+before the test, with nothing handled yet, but the app's windows as the test left them.
+This is the failure the user would have hit on their first run.
+
+{failure}
+
+{restored}
+
+Find the cause (screenshot the app if it helps; the screenshot attached is from the
+moment it failed). Likely ones: a file or path in the working folder the script relies
+on; a window, dialog or screen the test left different from where the script expects to
+start; a run with nothing new to do that throws instead of finishing; isTest changing
+what the script does. Fix workflow.mjs so it works from any folder and on every run, not
+just the first, then finish your turn.`
+
+const FINAL_RESTORED = `Retronaut restored the backup (restore.mjs) after the failure, so the app's data and
+state.json are back to how they were before the final check. Don't repair anything by hand.`
+
+const FINAL_NOT_RUN = `It failed before running, so nothing changed.`
+
+const REVERT_BY_HAND = `Retronaut's {which} of workflow.mjs passed. Nothing it did should stay: the user's
+first real run of the saved workflow does the work. There's no backup to restore (the
+plan's backup method is "none"), so undo what that one run changed by hand, so the
+user's data is as it was before it.
+
+What the run returned: {summary}
+Its steps:
+{steps}
+state.json before the run: {before}
+state.json after the run: {after}
+
+Use the app's own commands or interface (delete the entries it added, put back values it
+changed), then check the data is as it was. Then write revert.json in the working folder:
+{"reverted": true, "detail": "what you undid"} if everything is undone, or
+{"reverted": false, "detail": "what's left and why"} if not, and finish your turn.
+Don't change workflow.mjs.`
 
 const HEAL = `You maintain a saved automation on the user's Mac. It worked before, and failed in
 today's run. What it does: "{goal}"
@@ -374,8 +430,13 @@ function requireBackup(wfId: string, workspace: string) {
 }
 
 /** Back up the data before a test run. Null when it was backed up (or there's nothing to back up with), else the failure. */
-async function backupForTest(job: Job, workspace: string, out: string): Promise<ScriptOutcome | null> {
-  job.emit('info', 'Backing up before the test', 'so a failed test can be undone')
+async function backupForTest(
+  job: Job,
+  workspace: string,
+  out: string,
+  [label, detail]: [string, string] = ['Backing up before the test', 'so a failed test can be undone'],
+): Promise<ScriptOutcome | null> {
+  job.emit('info', label, detail)
   const outcome = await runScript(job, { dir: workspace, script: BACKUP, out, state: join(workspace, '.backups', 'state.json'), test: true })
   if (!outcome.ok) {
     job.emit('fail', 'Backup failed', outcome.error ?? '', outcome.failureShot ? job.saveShot(outcome.failureShot) : undefined)
@@ -390,8 +451,16 @@ async function backupForTest(job: Job, workspace: string, out: string): Promise<
 }
 
 /** Put the data (and state.json) back after a failed test. Null when restored, else the error. */
-async function restoreAfterTest(job: Job, workspace: string, out: string): Promise<string | null> {
-  job.emit('info', 'Restoring the backup', 'the test failed, so the data goes back to how it was before it')
+async function restoreAfterTest(
+  job: Job,
+  workspace: string,
+  out: string,
+  [why, done]: [string, [string, string]] = [
+    'the test failed, so the data goes back to how it was before it',
+    ['Restored to before the test', 'nothing from the failed test was left behind'],
+  ],
+): Promise<string | null> {
+  job.emit('info', 'Restoring the backup', why)
   const outcome = await runScript(job, { dir: workspace, script: RESTORE, out, state: join(workspace, '.backups', 'state.json'), test: true })
   if (!outcome.ok) {
     job.emit('fail', 'Restore failed', outcome.error ?? '', outcome.failureShot ? job.saveShot(outcome.failureShot) : undefined)
@@ -401,8 +470,202 @@ async function restoreAfterTest(job: Job, workspace: string, out: string): Promi
   const saved = join(workspace, '.backups', 'state.before.json')
   if (existsSync(saved)) copyFileSync(saved, state)
   else rmSync(state, { force: true })
-  job.emit('ok', 'Restored to before the test', 'nothing from the failed test was left behind')
+  job.emit('ok', done[0], done[1])
   return null
+}
+
+/**
+ * A fresh folder holding exactly what install() copies, so the final check runs the way a
+ * saved workflow does. Its .backups is the working folder's, so a restore.mjs the builder
+ * runs there after a failed check puts back the check's backup, not the test's.
+ */
+function stageInstalled(workspace: string): string {
+  const stage = realpathSync(mkdtempSync(join(tmpdir(), 'retronaut-check-')))
+  workflows.copyInstalled(workspace, stage)
+  mkdirSync(join(workspace, '.backups'), { recursive: true })
+  symlinkSync(join(workspace, '.backups'), join(stage, '.backups'), 'dir')
+  return stage
+}
+
+/** An installed script that names the build's working folder breaks once the build ends and it's deleted. */
+function workspaceReference(stage: string, workspace: string): ScriptOutcome | null {
+  const forms = [workspace, workspace.replace(/^\/private(?=\/)/, '')]
+  for (const file of [workflows.SCRIPT, BACKUP, RESTORE]) {
+    const path = join(stage, file)
+    if (!existsSync(path)) continue
+    const text = readFileSync(path, 'utf8')
+    const found = forms.find((f) => text.includes(f))
+    if (!found) continue
+    const error = `${file} refers to the build's working folder (${found}), which is deleted when the build ends: a saved workflow runs from its own folder. Use paths relative to the script (new URL('.', import.meta.url)) or the app's real data paths.`
+    return { ok: false, review: false, summary: null, error, step: null, failure: null, failureShot: null, output: '' }
+  }
+  return null
+}
+
+/** The final check's state.json becomes the build's: its changes stay, so what it handled must not be redone. */
+function keepCheckState(stage: string, workspace: string): void {
+  const state = join(stage, workflows.STATE)
+  if (existsSync(state)) copyFileSync(state, join(workspace, workflows.STATE))
+}
+
+function readState(path: string): string | null {
+  return existsSync(path) ? readFileSync(path, 'utf8') : null
+}
+
+/** The script steps a run finished since the job's event `from`. */
+function stepsSince(job: Job, from: number): string[] {
+  return job.snapshot().events.slice(from).filter((e) => e.kind === 'ok' && /^Step \d+:/.test(e.label)).map((e) => e.label)
+}
+
+/**
+ * With no backup, the builder undoes a passing run (the test, or the final check) by hand
+ * and says whether it could. If not, the caller keeps that run's state.json, so the first
+ * real run doesn't redo what it handled.
+ */
+async function revertByHand(
+  job: Job,
+  agent: Agent,
+  questions: Questions,
+  workspace: string,
+  which: 'test run' | 'final check',
+  outcome: ScriptOutcome,
+  steps: string[],
+  state: { before: string | null; after: string | null },
+): Promise<boolean> {
+  const verdict = join(workspace, 'revert.json')
+  rmSync(verdict, { force: true })
+  job.emit('info', `Undoing the ${which} by hand`, 'there is no backup for this app, so the builder reverses what the run changed')
+  const prompt = REVERT_BY_HAND.replace('{which}', which)
+    .replace('{summary}', JSON.stringify(outcome.summary))
+    .replace('{steps}', steps.map((s) => `- ${s}`).join('\n') || '(none reported)')
+    .replace('{before}', state.before?.trim() ?? '(none)')
+    .replace('{after}', state.after?.trim() ?? '(none)')
+  await converse(agent, questions, prompt)
+  let result: { reverted?: unknown; detail?: unknown } = {}
+  try {
+    result = JSON.parse(readFileSync(verdict, 'utf8'))
+  } catch {
+    // no verdict: treat as not undone
+  }
+  if (result.reverted === true) {
+    job.emit('ok', `Undid the ${which}`, String(result.detail ?? 'your data is as it was before it'))
+    return true
+  }
+  job.emit('fail', `Couldn't fully undo the ${which}`, `${String(result.detail ?? 'the builder did not confirm it')}. What it handled is recorded, so your first run won't redo it.`)
+  return false
+}
+
+/**
+ * A passing test's changes don't stay: put the data and state.json back to before it, so
+ * the user's first real run does the work. If that can't be done, its changes stay and
+ * its state.json with them, so the first run doesn't redo them.
+ */
+async function undoTest(
+  job: Job,
+  agent: Agent,
+  questions: Questions,
+  workspace: string,
+  outcome: ScriptOutcome,
+  test: { out: string; canUndo: boolean; from: number; stateBefore: string | null },
+): Promise<void> {
+  if (test.canUndo) {
+    const error = await restoreAfterTest(job, workspace, join(test.out, 'restore'), [
+      'the test passed; its changes are undone so your first run does the work',
+      ['Restored to before the test', 'your data is as it was; your first run does the work'],
+    ])
+    if (error) job.emit('fail', "Couldn't undo the test run", `${error}. Its changes stay and are recorded, so your first run won't redo them.`)
+    return
+  }
+  const state = join(workspace, workflows.STATE)
+  const after = readState(state)
+  const reverted = await revertByHand(job, agent, questions, workspace, 'test run', outcome, stepsSince(job, test.from), { before: test.stateBefore, after })
+  if (!reverted) return
+  if (test.stateBefore === null) rmSync(state, { force: true })
+  else writeFileSync(state, test.stateBefore)
+}
+
+/**
+ * The last step of testing: run the script once more the way the user's first run will,
+ * on their data as it was before the (undone) test, and undo it. Fixes go to the builder, like test failures.
+ * Null when it passed (a stop for review counts: the script works, and a run would stop
+ * there too), else the last failure.
+ */
+async function finalCheck(job: Job, agent: Agent, questions: Questions, workspace: string): Promise<ScriptOutcome | null> {
+  let outcome: ScriptOutcome | null = null
+  for (let attempt = 0; attempt <= MAX_FIXES; attempt++) {
+    await job.whenRunning()
+    if (job.stopped) throw new Error('stopped')
+    const out = join(workspace, `final-check-${attempt + 1}`)
+    const stage = stageInstalled(workspace)
+    try {
+      const canUndo = backupKit(stage)
+      job.emit(
+        'info',
+        attempt === 0 ? 'Final check' : `Final check ${attempt + 1}`,
+        canUndo
+          ? 'running the saved workflow once more, the way your runs will, then putting your data back'
+          : 'running the saved workflow once more, the way your runs will, then undoing it by hand',
+      )
+      let restored = FINAL_NOT_RUN
+      const leak = workspaceReference(stage, workspace)
+      if (leak) {
+        outcome = leak
+        job.emit('fail', 'Final check failed', leak.error ?? '')
+      } else {
+        if (canUndo) {
+          const failed = await backupForTest(job, stage, join(out, 'backup'), ['Backing up before the final check', 'so your data goes back to how it is now'])
+          if (failed) {
+            outcome = failed
+            if (attempt === MAX_FIXES) break
+            await converse(agent, questions, BACKUP_FAILED.replace('{failure}', describeFailure(failed)), attachments(failed))
+            continue
+          }
+        }
+        const from = job.snapshot().events.length
+        outcome = await runScript(job, { dir: stage, script: workflows.SCRIPT, out, state: join(stage, workflows.STATE) })
+        if (job.stopped) {
+          if (canUndo) await restoreAfterTest(job, stage, join(out, 'restore'), ['you stopped the build, so the final check is undone', ['Restored', 'your data is as it was before the final check']])
+          else keepCheckState(stage, workspace)
+          throw new Error('stopped')
+        }
+        if (outcome.ok || outcome.review) {
+          if (outcome.review) job.emit('info', 'Final check stopped for review', 'the script works; it stopped on purpose for data a person should look at, as a run would')
+          else job.emit('ok', 'Final check passed', 'the saved workflow runs the same way outside the test')
+          if (canUndo) {
+            const error = await restoreAfterTest(job, stage, join(out, 'restore'), [
+              'the final check passed, so your data goes back to how it was before it',
+              ['Restored to before the final check', 'your data is as it was; your first run does the work'],
+            ])
+            if (error) {
+              keepCheckState(stage, workspace)
+              job.emit('fail', "Couldn't undo the final check", `${error}. What it handled is recorded, so your first run won't redo it.`)
+            }
+          } else {
+            const state = { before: readState(join(workspace, workflows.STATE)), after: readState(join(stage, workflows.STATE)) }
+            if (!(await revertByHand(job, agent, questions, workspace, 'final check', outcome, stepsSince(job, from), state))) keepCheckState(stage, workspace)
+          }
+          return null
+        }
+        job.emit('fail', 'Final check failed', outcome.error ?? '', outcome.failureShot ? job.saveShot(outcome.failureShot) : undefined)
+        if (canUndo) {
+          const error = await restoreAfterTest(job, stage, join(out, 'restore'), [
+            'the final check failed, so your data goes back to how it was before it',
+            ['Restored to before the final check', 'nothing from the failed check was left behind'],
+          ])
+          restored = error ? RESTORE_FAILED.replace('{error}', error) : FINAL_RESTORED
+        } else {
+          keepCheckState(stage, workspace) // what it did before failing really happened
+          restored = NOT_RESTORED
+        }
+      }
+      if (attempt === MAX_FIXES) break
+      job.emit('info', 'Fixing the script', "sending the final check's failure to the builder")
+      await converse(agent, questions, FINAL_CHECK_FAILED.replace('{failure}', describeFailure(outcome)).replace('{restored}', restored), attachments(outcome))
+    } finally {
+      rmSync(stage, { recursive: true, force: true })
+    }
+  }
+  return outcome
 }
 
 async function build(wfId: string, job: Job): Promise<void> {
@@ -411,6 +674,7 @@ async function build(wfId: string, job: Job): Promise<void> {
   const questions = new Questions(job, wfId, allowed)
   const agent = makeAgent('Builder', job, workspace, toolContext(job, allowed, questions), questions, requireBackup(wfId, workspace))
   let outcome: ScriptOutcome | null = null
+  let lastTest: { out: string; canUndo: boolean; from: number; stateBefore: string | null } | null = null
   try {
     provideRuntime(workspace)
     const wf = workflows.get(wfId)!
@@ -448,7 +712,8 @@ async function build(wfId: string, job: Job): Promise<void> {
       } else {
         job.emit('info', 'Testing without a backup', 'the approved plan says this app has no safe way to back up')
       }
-      job.emit('info', attempt === 0 ? 'Test run' : `Test run ${attempt + 1}`, 'running workflow.mjs for real')
+      job.emit('info', attempt === 0 ? 'Test run' : `Test run ${attempt + 1}`, 'running workflow.mjs for real; undone afterwards')
+      lastTest = { out, canUndo, from: job.snapshot().events.length, stateBefore: readState(join(workspace, workflows.STATE)) }
       outcome = await runScript(job, {
         dir: workspace,
         script: workflows.SCRIPT,
@@ -466,6 +731,14 @@ async function build(wfId: string, job: Job): Promise<void> {
       await converse(agent, questions, TEST_FAILED.replace('{failure}', describeFailure(outcome)).replace('{restored}', restored), attachments(outcome))
     }
 
+    // Passing the test isn't done: undo it, so the first real run does the work, and
+    // check that first run passes too.
+    if (outcome?.ok && lastTest) {
+      await undoTest(job, agent, questions, workspace, outcome, lastTest)
+      const failed = await finalCheck(job, agent, questions, workspace)
+      if (failed) outcome = failed
+    }
+
     if (outcome?.ok) {
       workflows.install(wfId, workspace, 'build')
       workflows.update(wfId, (w) => {
@@ -473,10 +746,11 @@ async function build(wfId: string, job: Job): Promise<void> {
         w.apps = [...allowed.values()]
         if (w.plan?.summary) w.note = w.plan.summary
       })
-      job.emit('ok', 'Workflow saved', 'it can now run on its own, and heals itself if something changes')
-      job.finish('passed', { summary: outcome.summary })
+      job.emit('ok', 'Workflow saved', 'your data is as it was: run it to do the work. It heals itself if something changes')
+      // No summary: the test's work was undone, so the build didn't do any of it.
+      job.finish('passed', {})
       needAttention(job, 'built')
-      workflows.recordRun(job, { summary: outcome.summary })
+      workflows.recordRun(job)
     } else {
       const error = outcome?.error ?? 'the builder did not write workflow.mjs'
       workflows.update(wfId, (w) => {

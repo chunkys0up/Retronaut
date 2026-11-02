@@ -136,6 +136,19 @@ export function script(id: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
 }
 
+/**
+ * Copy what an installed workflow is made of, and nothing else, from an agent's working
+ * folder: the script, the state its run left, and the app's backup and restore scripts
+ * (for healing sessions to undo a failed attempt). A build's final check runs from a copy
+ * made with this, so it sees exactly what a saved workflow's runs will.
+ */
+export function copyInstalled(workspace: string, dir: string): void {
+  mkdirSync(dir, { recursive: true })
+  copyFileSync(join(workspace, SCRIPT), join(dir, SCRIPT))
+  if (existsSync(join(workspace, STATE))) copyFileSync(join(workspace, STATE), join(dir, STATE))
+  for (const kit of BACKUP_SCRIPTS) if (existsSync(join(workspace, kit))) copyFileSync(join(workspace, kit), join(dir, kit))
+}
+
 /** Install a script (and the state its test run left) from an agent's working folder. */
 export function install(id: string, workspace: string, reason: string): void {
   const dir = folder(id)
@@ -144,10 +157,7 @@ export function install(id: string, workspace: string, reason: string): void {
     mkdirSync(join(dir, 'history'), { recursive: true })
     copyFileSync(current, join(dir, 'history', `${Date.now()}-${reason}.mjs`))
   }
-  copyFileSync(join(workspace, SCRIPT), current)
-  if (existsSync(join(workspace, STATE))) copyFileSync(join(workspace, STATE), join(dir, STATE))
-  // The app's backup and restore scripts, for healing sessions to undo a failed attempt.
-  for (const kit of BACKUP_SCRIPTS) if (existsSync(join(workspace, kit))) copyFileSync(join(workspace, kit), join(dir, kit))
+  copyInstalled(workspace, dir)
 }
 
 export function runDir(id: string, jobId: string): string {
