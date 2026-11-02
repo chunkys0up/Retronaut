@@ -112,7 +112,7 @@ export function BuildCard({
   const shot = [...job.events].reverse().find((e) => e.image)
   const recent = recentSteps(job, 4)
   const latest = job.events[job.events.length - 1]
-  const elapsed = activeSeconds(job, job.started, running ? now : (job.finished ?? now)) // paused time doesn't count
+  const elapsed = activeSeconds(job, job.started, running ? now : (job.finished ?? now)) // time paused or waiting on the user doesn't count
   const title = jobTitle(job)
 
   const state = `${running ? 'build-live' : `build-${job.status}`}${running && job.paused ? ' build-paused' : ''}`

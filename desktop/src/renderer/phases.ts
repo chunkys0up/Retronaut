@@ -70,19 +70,29 @@ export function phaseStarts(job: JobSnapshot): (number | null)[] {
   return starts
 }
 
-/** Seconds from `from` to `to` that the build wasn't paused (time paused doesn't count). */
+/**
+ * Seconds from `from` to `to` that the build was working: time paused, or waiting on the user
+ * to answer a request, doesn't count. Overlaps (paused while a request waits) count once.
+ */
 export function activeSeconds(job: JobSnapshot, from: number, to: number): number {
-  let paused = 0
-  for (const [start, end] of job.pauses ?? []) {
-    const a = Math.max(start, from)
-    const b = Math.min(end ?? to, to)
-    if (b > a) paused += b - a
+  const held: [number, number][] = []
+  for (const [start, end] of job.pauses ?? []) held.push([start, end ?? to])
+  for (const r of job.requests) if (r.asked != null) held.push([r.asked, r.answered ?? to])
+  held.sort((a, b) => a[0] - b[0])
+  let stopped = 0
+  let reached = from // the end of what's been counted so far
+  for (const [start, end] of held) {
+    const a = Math.max(start, reached)
+    const b = Math.min(end, to)
+    if (b > a) stopped += b - a
+    reached = Math.max(reached, Math.min(end, to))
   }
-  return Math.max(0, to - from - paused)
+  return Math.max(0, to - from - stopped)
 }
 
 /**
- * How long each phase took, or has taken so far (seconds, leaving out time paused); null for
+ * How long each phase took, or has taken so far (seconds, leaving out time paused or waiting
+ * on the user); null for
  * phases not reached, or passed through without time of their own.
  */
 export function phaseDurations(job: JobSnapshot, now: number): (number | null)[] {

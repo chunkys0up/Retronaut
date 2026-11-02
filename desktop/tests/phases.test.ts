@@ -24,7 +24,8 @@ const events = [
 test('each phase starts at the event that moves the build into it; writing at the approval', () => {
   const job = build(events, [plan(255)], 'passed', 960)
   expect(phaseStarts(job)).toEqual([0, 5, 30, 200, 255, 900])
-  expect(phaseDurations(job, 960)).toEqual([5, 25, 170, 55, 645, 60])
+  // Planning was all waiting on the user to approve the plan (200-255): no time of its own.
+  expect(phaseDurations(job, 960)).toEqual([5, 25, 170, null, 645, 60])
 })
 
 test('logs from before approvals were timed: writing starts after the builder went quiet', () => {
@@ -46,6 +47,17 @@ test('time spent paused is left out of the build and phase timers', () => {
   // Writing began at 255 and was paused at 300, still paused at 400: 45s so far, not 145s.
   expect(phaseDurations(job, 400)[4]).toBe(45)
   expect(phaseDurations(job, 500)[4]).toBe(45) // it doesn't count up while paused
-  // The build's own clock: 400s since it began, 60s + 100s of it paused.
-  expect(activeSeconds(job, 0, 400)).toBe(240)
+  // The build's own clock: 400s since it began, 60s + 100s of it paused and 55s waiting on
+  // the plan's approval.
+  expect(activeSeconds(job, 0, 400)).toBe(185)
+})
+
+test('time waiting on the user to answer a request is left out too, overlaps with pauses once', () => {
+  const asked = (id: string, at: number, answered: number | null): UserRequest => ({
+    id, kind: 'question', title: '', reason: '', data: {}, status: answered === null ? 'pending' : 'approved', feedback: '', asked: at, answered,
+  })
+  const job = { ...build([], [asked('a', 10, 30), asked('b', 50, null)]), pauses: [[20, 40]] as [number, number | null][] }
+  // 0-100: waiting 10-30 and paused 20-40 hold 10-40 (30s), waiting on b from 50: 20s left.
+  expect(activeSeconds(job, 0, 100)).toBe(20)
+  expect(activeSeconds(job, 0, 200)).toBe(20) // it doesn't count up while a card waits
 })
