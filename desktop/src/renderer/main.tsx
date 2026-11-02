@@ -9,4 +9,14 @@ import { Pip } from './Pip.tsx'
 // The same page serves the picture-in-picture window, at #pip.
 const pip = window.location.hash === '#pip'
 
-createRoot(document.getElementById('root')!).render(<StrictMode>{pip ? <Pip /> : <App />}</StrictMode>)
+const root = createRoot(document.getElementById('root')!)
+// TEMPORARY: the card tester, loaded only on its own page (it fakes the engine's /live).
+if (window.location.hash === '#pip-test')
+  void import('./PipTester.tsx').then(({ PipTester }) =>
+    root.render(
+      <StrictMode>
+        <PipTester />
+      </StrictMode>,
+    ),
+  )
+else root.render(<StrictMode>{pip ? <Pip /> : <App />}</StrictMode>)
