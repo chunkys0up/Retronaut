@@ -1808,8 +1808,8 @@ body.pip-body {
    them) along the top, its last few steps in a rounded panel under that, and, while Retronaut
    drives an app, an activity chip under the panel, the card growing down into the window's
    clear space to hold it (the window is as tall as the card with the chip open: overlay.ts's
-   PIP.height). The window itself is translucent and fades away under the pointer, except over
-   the chip (overlay.ts). The window isn't rounded, so the card rounds its own corners, around
+   PIP.height). The card is a little translucent (90%: its background and its title and
+   steps), its chip solid, and it opens a hole under the pointer, except over the chip. The window isn't rounded, so the card rounds its own corners, around
    the steps' panel (its radius plus the card's 8px inset). */
 /* The window is the card's box with this much clear space round it on every side (overlay.ts's
    PIP.pad), so the card hears the pointer coming near its edges from outside it too. */
@@ -1862,11 +1862,13 @@ body.pip-body {
   z-index: -1;
   border-radius: inherit;
   background-color: var(--bg);
+  opacity: 0.9;
   transition: background-color 0.5s ease-in-out;
   -webkit-mask-image: var(--hole);
   mask-image: var(--hole);
 }
 .pip-main {
+  opacity: 0.9;
   -webkit-mask-image: var(--hole);
   mask-image: var(--hole);
 }
@@ -1896,6 +1898,9 @@ body.pip-body {
 .pip:has(.pip-activity.open.paused)::before {
   background-color: color-mix(in srgb, var(--bg) 90%, #ffce1b); /* the waiting chip's yellow */
 }
+.pip:has(.pip-activity.open.finished)::before {
+  background-color: color-mix(in srgb, var(--bg) 90%, #16a34a); /* the finished chip's green */
+}
 /* The step ring's lit segments: white while it only watches, the chip's orange or yellow
    while the chip shows (fading between, as its strokes do). */
 .pip {
@@ -1906,6 +1911,9 @@ body.pip-body {
 }
 .pip:has(.pip-activity.open.paused) {
   --ring: #ffce1b;
+}
+.pip:has(.pip-activity.open.finished) {
+  --ring: #16a34a;
 }
 /* The title and the steps: the card's whole height while the chip is closed. */
 .pip-main {
@@ -1982,11 +1990,13 @@ body.pip-body {
 }
 /* A box shaped like the steps' panel above it (its radius), in its colour: orange while it
    works, yellow while it waits for you, filled with it a shade darker than its border (so
-   the border still shows), with a paler stripe of it sweeping across, left to right, over
-   and over, while it goes on.
+   the border still shows), its words white (black on the yellow), with a paler stripe of it
+   sweeping across, left to right, over and over, while it goes on.
    What's asked of you over what it's doing, and Stop. */
 .pip-chip {
   --chip: var(--accent);
+  --chip-fill: color-mix(in srgb, var(--chip) 88%, #000); /* a shade darker than its border */
+  --chip-ink: var(--text);
   position: relative;
   overflow: hidden;
   isolation: isolate;
@@ -1996,7 +2006,8 @@ body.pip-body {
   padding: 9px 9px 9px 14px;
   border: 1px solid var(--chip);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--chip) 88%, #000);
+  background: var(--chip-fill);
+  color: var(--chip-ink);
   font-size: 12px;
   white-space: nowrap;
   transform-origin: 50% 0;
@@ -2010,6 +2021,31 @@ body.pip-body {
 }
 .pip-activity.paused .pip-chip {
   --chip: #ffce1b;
+  --chip-ink: #000; /* white is hard to read on the yellow */
+}
+/* The run passed: green, and still (no sweep: nothing goes on). */
+.pip-activity.finished .pip-chip {
+  --chip: #16a34a;
+  --chip-ink: var(--text);
+}
+.pip-activity.finished .pip-chip::before {
+  content: none;
+}
+/* As tall as the other chips: its one line centred over an unseen copy of their two (Pip). */
+.pip-activity.finished .pip-chip-text {
+  display: grid;
+}
+.pip-activity.finished .pip-chip-text > * {
+  grid-area: 1 / 1;
+}
+.pip-activity.finished .pip-chip-text > .pip-chip-main {
+  align-self: center;
+}
+.pip-chip-ghost {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  visibility: hidden;
 }
 .pip-chip::before {
   content: '';
@@ -2066,23 +2102,14 @@ body.pip-body {
 }
 .pip-chip-main {
   font-size: 17px;
-  color: var(--text);
 }
 .pip-chip-sub {
   font-size: 12.5px;
-  font-weight: 700;
-  color: var(--text); /* as the line above, bold too; a little fainter, and smaller */
+  font-weight: 700; /* as the line above, bold too; a little fainter, and smaller */
   opacity: 0.65;
 }
-/* Waiting for you: black words on the yellow (white is hard to read on it), its second line
-   a little fainter as on the orange; its Stop button black on a darker shade of the yellow;
-   its sweep a paler yellow. */
-.pip-activity.paused .pip-chip-main,
-.pip-activity.paused .pip-chip-sub {
-  color: #000;
-}
+/* Waiting for you: its Stop button on a darker shade of the yellow; its sweep a paler yellow. */
 .pip-activity.paused .pip-chip-stop:not(:hover) {
-  color: #000;
   background: rgba(0, 0, 0, 0.12);
 }
 .pip-activity.paused .pip-chip::before {
@@ -2107,7 +2134,8 @@ body.pip-body {
     rgba(255, 236, 160, 0.000) 100%
   );
 }
-.pip-chip-stop {
+.pip-chip-stop,
+.pip-chip-check {
   flex: none;
   align-self: stretch; /* as tall as the chip's text, inset evenly top, bottom and right */
   height: auto; /* not App.css's fixed button height */
@@ -2115,12 +2143,23 @@ body.pip-body {
   align-items: center;
   font: inherit;
   font-weight: 600;
-  color: var(--text);
+  color: var(--chip-ink);
   background: rgba(255, 255, 255, 0.12);
   border: 0;
   border-radius: var(--radius-md);
   padding: 0 14px;
   cursor: pointer;
+}
+/* In Stop's place once the run passes: a check mark, bare on the green, not a button. */
+.pip-chip-check {
+  justify-content: center;
+  padding: 0 10px;
+  background: none;
+  border-radius: 0;
+  cursor: default;
+}
+.pip-chip-check svg {
+  display: block;
 }
 /* Hovered: a nearly white pill with bright red words, standing clear of the orange or yellow
    around it. Scoped under .pip-chip to outrank App.css's button:hover. */

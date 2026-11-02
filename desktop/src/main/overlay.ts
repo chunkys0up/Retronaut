@@ -8,9 +8,10 @@
  * - The picture-in-picture: what the build or run is doing and its last few steps, in
  *   the top-right corner, for the whole build or run. While Retronaut drives an app, a
  *   chip naming the action (and a Stop button) opens under the steps, the card growing
- *   down to hold it. Clicks pass through the card, and near the pointer it opens a soft
- *   hole that follows it, showing what's under, the chip staying whole above it (and taking
- *   the Stop button's click). Its window reaches a little past the card on every side, all
+ *   down to hold it. A run that passes ends on a green chip saying so (a check mark in
+ *   place of Stop), the card staying a moment to show it, then leaving with it. Clicks pass
+ *   through the card, and near the pointer it opens a soft hole that follows it, showing
+ *   what's under, the chip staying whole above it (and taking the Stop button's click). Its window reaches a little past the card on every side, all
  *   of it clear, so the card hears the pointer coming near its edges too.
  *
  * Neither window ever takes focus, so neither can steal input meant for the app being
@@ -33,7 +34,7 @@ import * as ui from './uiActivity'
 // that box with `pad` more clear space on every side (Shell.css .pip-window's padding), so
 // the card hears the pointer coming near its edges from outside it too (its hole that
 // follows the pointer, Pip). The clear space lets clicks through.
-const PIP = { width: 320, height: 270, margin: 14, opacity: 0.9, pad: 90 }
+const PIP = { width: 320, height: 270, margin: 14, pad: 90 }
 /** The window's size: the card's box and its clear margin all round. */
 const PIP_WINDOW = { width: PIP.width + 2 * PIP.pad, height: PIP.height + 2 * PIP.pad }
 // A MacBook's built-in display has rounded corners; the frame follows its edge (external
@@ -160,6 +161,8 @@ let rendererUrl = ''
 let display: Display | null = null
 let session = false
 let held = false // the live build is paused
+let finished = false // a run just passed: the picture-in-picture shows its green chip a moment, then leaves
+let finishTimer: ReturnType<typeof setTimeout> | null = null
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 let pipGlide: ReturnType<typeof setInterval> | null = null
 let pipLeaving = false
@@ -171,6 +174,9 @@ const FRAME_ON_SCREEN_MS = 450
 // animation (0.86s) lands, then "Starting the agent…" blurs in (StepFeed's START_MS, 1.5s,
 // after the page settles, over 0.55s); they start just after.
 const BUILD_ENTRY_DELAY_MS = 2900
+// How long the picture-in-picture stays once a run passes: its green chip opens (the card
+// growing down, then the chip, about 0.6s), stays a moment to be read, then the card leaves with it.
+const FINISHED_MS = 2200
 
 function floating(win: BrowserWindow): BrowserWindow {
   win.setAlwaysOnTop(true, 'screen-saver')
@@ -192,7 +198,7 @@ function pipWindow(): BrowserWindow {
   if (pip && !pip.isDestroyed()) return pip
   // Not rounded by macOS: the window is taller than the card (room for its activity chip),
   // so the card rounds its own corners (Shell.css .pip).
-  pip = floating(new BrowserWindow({ ...PANEL, ...PIP_WINDOW, opacity: PIP.opacity, roundedCorners: false }))
+  pip = floating(new BrowserWindow({ ...PANEL, ...PIP_WINDOW, roundedCorners: false }))
   void pip.loadURL(`${rendererUrl.replace(/#.*$/, '')}#pip`)
   return pip
 }
@@ -244,7 +250,6 @@ function glide(win: BrowserWindow, arriving: boolean): void {
     // The card catches up with the new build or run while it's still out of sight (Pip).
     void win.webContents.executeJavaScript('window.pipRefresh && window.pipRefresh()').catch(() => {})
     win.setBounds({ x: pipCorner().x, y: above, ...PIP_WINDOW })
-    win.setOpacity(PIP.opacity)
     win.showInactive()
   }
   if (!arriving) void win.webContents.executeJavaScript('window.pipLeave && window.pipLeave()').catch(() => {})
@@ -317,7 +322,7 @@ function cornerRadii(d: Display): { top: number; bottom: number } {
 /** What the picture-in-picture's activity chip shows: what Retronaut is doing in an app now. */
 function sendActivity(win: BrowserWindow): void {
   const { active, app, paused, action } = ui.current()
-  const payload = JSON.stringify({ active, app, paused, action })
+  const payload = JSON.stringify({ active, app, paused, action, finished })
   const send = () => void win.webContents.executeJavaScript(`window.pipActivity && window.pipActivity(${payload})`).catch(() => {})
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
   else send()
@@ -350,9 +355,12 @@ function render(): void {
     hideTimer = setTimeout(() => w.hide(), 600) // let the frame leaving finish
   }
   const p = pipWindow()
-  sendActivity(p)
   if (session && (!p.isVisible() || pipLeaving)) glidePip(true)
-  if (!session && p.isVisible() && !pipLeaving) glidePip(false)
+  if (!session && !finished && p.isVisible() && !pipLeaving) glidePip(false)
+  // After the glide, so a card told to leave hears that first and keeps its chip as it was
+  // (Pip's held): told the chip had closed first, it would snap shut as the card set off
+  // (its transitions are off while it leaves), the card jumping shorter.
+  sendActivity(p)
 }
 
 export function installOverlay(url: string): void {
@@ -375,6 +383,7 @@ export function installOverlay(url: string): void {
   // has come in (StepFeed's START_MS after the page settles), so they don't compete with it.
   let entering: ReturnType<typeof setTimeout> | null = null
   let waited: string | null = null // the build whose wait is over
+  let lastLive: string | null = null // the job last showing, kept once it ends to see how it ended
   const syncJobs = () => {
     const live = liveJob()
     if (live && !session && live.kind === 'build' && waited !== live.id) {
@@ -391,10 +400,26 @@ export function installOverlay(url: string): void {
     }
     const now = live !== null
     const pausedNow = live?.paused ?? false
+    const showing = lastLive
+    if (live) lastLive = live.id
     if (now === session && pausedNow === held) return
+    // A run that ended passing: the picture-in-picture (and the display it's on) stays while
+    // its green chip shows. A new build or run cuts that short.
+    const ended = session && !now ? JOBS.get(showing ?? '') : undefined
+    if (finishTimer) clearTimeout(finishTimer)
+    finishTimer = null
+    finished = ended?.kind === 'run' && ended.status === 'passed'
+    if (finished) {
+      finishTimer = setTimeout(() => {
+        finishTimer = null
+        finished = false
+        if (!session) display = null
+        render()
+      }, FINISHED_MS)
+    }
     session = now
     held = pausedNow
-    if (!session) display = null
+    if (!session && !finished) display = null
     render()
   }
   onJobsChange(syncJobs)

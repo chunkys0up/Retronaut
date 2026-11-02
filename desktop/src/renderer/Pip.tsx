@@ -128,7 +128,7 @@ function Steps({ jobId, steps, events }: { jobId: string; steps: JobEvent[]; eve
 /** The hole the pointer opens in the card: its radius, its soft edge starting about halfway in. */
 const HOLE_R = 100
 
-/** Switching between the orange and yellow chips: the one leaving, then the one arriving. */
+/** Switching between the chips (orange, yellow, green): the one leaving, then the one arriving. */
 const CHIP_LEAVE_MS = 160
 const CHIP_ARRIVE_MS = 400
 
@@ -138,7 +138,12 @@ type Activity = {
   app: string
   paused: boolean
   action: string
+  /** A run just passed: the green chip, the card leaving with it a moment later. */
+  finished: boolean
 }
+
+/** Which chip: working (orange), waiting for you (yellow), or the run passed (green). */
+type ChipFace = 'work' | 'wait' | 'done'
 
 /**
  * The activity chip, under the steps and outside their panel, as the title row sits above
@@ -146,12 +151,16 @@ type Activity = {
  * mouse and keyboard) and a Stop button. It opens while Retronaut drives an app, the card
  * growing down to hold it, and closes after, keeping its last words while it shrinks away.
  * The pointer over it doesn't fade the card, so Stop can be reached and clicked.
+ * When a run passes it opens (or hands over) once more, green, saying so, a check mark in
+ * place of Stop, and stays as the card leaves.
  */
 function ActivityChip({ activity }: { activity: Activity }) {
   // The last thing it said, kept while it closes.
   const [last, setLast] = useState(activity)
-  if (activity.active && activity !== last) setLast(activity)
-  const { app, paused, action } = activity.active ? activity : last
+  const open = activity.active || activity.finished
+  if (open && activity !== last) setLast(activity)
+  const { app, paused, action, finished } = open ? activity : last
+  const kind: ChipFace = finished ? 'done' : paused ? 'wait' : 'work'
   // The row opens to the chip's measured height (CSS can't animate to `auto`), kept current
   // as the chip's text changes, so the card always grows exactly enough to hold it.
   const row = useRef<HTMLDivElement>(null)
@@ -166,22 +175,28 @@ function ActivityChip({ activity }: { activity: Activity }) {
     return () => watch.disconnect()
   }, [])
 
-  // Which chip shows: the orange one (working) or the yellow one (waiting for you). Switching
+  // Which chip shows: the orange one (working), the yellow one (waiting for you) or the green
+  // one (the run passed). Opening from closed (or closing), it's whichever is wanted. Switching
   // while it's open, one hands over to the other: the one showing leaves as the chip does when
   // it closes (scaling down and fading), the other takes its place unseen, then arrives as the
   // chip does when it opens (scaling up and fading in), the row holding its height throughout.
   // A switch back while the first is still leaving just brings in whichever is wanted by then.
   const chip = useRef<HTMLDivElement>(null)
-  const [face, setFace] = useState(paused)
+  const [face, setFace] = useState<ChipFace>(kind)
+  const wasOpen = useRef(open)
+  if (!wasOpen.current && open && kind !== face) setFace(kind) // opening: no handover
+  useEffect(() => {
+    wasOpen.current = open
+  })
   const [arrivals, setArrivals] = useState(0) // each handover's arrival
-  const wanted = useRef(paused)
-  wanted.current = paused
+  const wanted = useRef(kind)
+  wanted.current = kind
   const leaving = useRef<Animation | null>(null)
   useEffect(() => {
-    if (paused === face || leaving.current) return
+    if (kind === face || leaving.current) return
     const el = chip.current
-    if (!el || !activity.active || prefersReducedMotion()) {
-      setFace(paused) // closed, or no motion: just the other one
+    if (!el || !open || prefersReducedMotion()) {
+      setFace(kind) // closed, or no motion: just the other one
       return
     }
     const out = el.animate(
@@ -205,7 +220,7 @@ function ActivityChip({ activity }: { activity: Activity }) {
         leaving.current = null
       },
     )
-  }, [paused, face, activity.active])
+  }, [kind, face, open])
   useLayoutEffect(() => {
     if (!arrivals) return
     const el = chip.current
@@ -222,22 +237,44 @@ function ActivityChip({ activity }: { activity: Activity }) {
       },
     )
   }, [arrivals])
-  const waiting = face
+  const waiting = face === 'wait'
+  const done = face === 'done'
 
   return (
-    <div ref={row} className={`pip-activity${activity.active ? ' open' : ''}${waiting ? ' paused' : ''}`} aria-hidden={!activity.active}>
+    <div
+      ref={row}
+      className={`pip-activity${open ? ' open' : ''}${waiting ? ' paused' : ''}${done ? ' finished' : ''}`}
+      aria-hidden={!open}
+    >
       <div className="pip-activity-inner" ref={inner}>
         <div className="pip-chip" ref={chip} role="status" onMouseEnter={() => pipChipHover(true)} onMouseLeave={() => pipChipHover(false)}>
           <span className="pip-chip-text">
             {/* What's asked of you on top, what it's doing (or how to let it go on) under it. */}
-            <b className="pip-chip-main">{waiting ? 'Waiting for you' : 'Hands off'}</b>
-            <span className="pip-chip-sub">
-              {waiting ? 'Let go of the mouse and keyboard' : action ? `${app || 'App'}: ${action}` : `Using ${app || 'an app'}`}
-            </span>
+            <b className="pip-chip-main">{done ? 'Workflow finished' : waiting ? 'Waiting for you' : 'Hands off'}</b>
+            {done ? (
+              // Unseen, the two lines the other chips have, so this one is as tall as they
+              // are, its one line centred over them.
+              <span className="pip-chip-ghost" aria-hidden="true">
+                <b className="pip-chip-main">&nbsp;</b>
+                <span className="pip-chip-sub">&nbsp;</span>
+              </span>
+            ) : (
+              <span className="pip-chip-sub">
+                {waiting ? 'Let go of the mouse and keyboard' : action ? `${app || 'App'}: ${action}` : `Using ${app || 'an app'}`}
+              </span>
+            )}
           </span>
-          <button type="button" className="pip-chip-stop" onClick={stopLive} tabIndex={activity.active ? 0 : -1}>
-            Stop
-          </button>
+          {done ? (
+            <span className="pip-chip-check" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          ) : (
+            <button type="button" className="pip-chip-stop" onClick={stopLive} tabIndex={activity.active ? 0 : -1}>
+              Stop
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -292,6 +329,7 @@ export function Pip() {
     app: '',
     paused: false,
     action: '',
+    finished: false,
   })
 
   useEffect(() => {
@@ -300,9 +338,11 @@ export function Pip() {
     const load = async () => {
       try {
         const live = await api<LiveJob | null>('/live')
-        if (!stopped) {
-          if (live) setJob(live)
-          setLeaving(!live)
+        // Only coming back is up to the poll: leaving waits for overlay.ts (pipLeave), which
+        // keeps the card a moment after a run passes, for its green chip.
+        if (!stopped && live) {
+          setJob(live)
+          setLeaving(false)
         }
       } catch {
         // the engine is restarting; keep the last card

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Pip } from './Pip'
 
-type Activity = { active: boolean; app: string; paused: boolean; action: string }
+type Activity = { active: boolean; app: string; paused: boolean; action: string; finished: boolean }
 
 const STEPS = [
   'Opening GnuCash',
@@ -59,7 +59,7 @@ if (window.location.hash === '#pip-test')
 const send = (a: Activity) => (window as Window & { pipActivity?: (a: Activity) => void }).pipActivity?.(a)
 
 export function PipTester() {
-  const [state, setState] = useState<'off' | 'working' | 'using' | 'waiting'>('off')
+  const [state, setState] = useState<'off' | 'working' | 'using' | 'waiting' | 'finished'>('off')
   const [cycling, setCycling] = useState(false)
   const [growing, setGrowing] = useState(true)
   const [shown, setShown] = useState(true)
@@ -67,10 +67,12 @@ export function PipTester() {
 
   useEffect(() => {
     const app = 'GnuCash'
-    if (state === 'off') send({ active: false, app, paused: false, action: '' })
-    if (state === 'working') send({ active: true, app, paused: false, action: ACTIONS[actionAt.current % ACTIONS.length]! })
-    if (state === 'using') send({ active: true, app, paused: false, action: '' })
-    if (state === 'waiting') send({ active: true, app, paused: true, action: ACTIONS[actionAt.current % ACTIONS.length]! })
+    const finished = false
+    if (state === 'off') send({ active: false, app, paused: false, action: '', finished })
+    if (state === 'working') send({ active: true, app, paused: false, action: ACTIONS[actionAt.current % ACTIONS.length]!, finished })
+    if (state === 'using') send({ active: true, app, paused: false, action: '', finished })
+    if (state === 'waiting') send({ active: true, app, paused: true, action: ACTIONS[actionAt.current % ACTIONS.length]!, finished })
+    if (state === 'finished') send({ active: false, app, paused: false, action: '', finished: true })
   }, [state])
 
   // New steps keep arriving, so the steps panel scrolls as it would.
@@ -113,6 +115,7 @@ export function PipTester() {
         {button('Working (with action)', state === 'working' && !cycling, () => pick('working'))}
         {button('Working (no action)', state === 'using' && !cycling, () => pick('using'))}
         {button('Waiting for you', state === 'waiting' && !cycling, () => pick('waiting'))}
+        {button('Finished (run passed)', state === 'finished' && !cycling, () => pick('finished'))}
         {button('Cycle through them', cycling, () => setCycling((c) => !c))}
         <span style={{ opacity: 0.6, marginTop: 10 }}>Card</span>
         {button('Steps arriving', growing, () => setGrowing((g) => !g))}
@@ -124,7 +127,7 @@ export function PipTester() {
           setShown(!shown)
         })}
         <span style={{ opacity: 0.5, fontSize: 12, marginTop: 10 }}>
-          The striped box is the window (500×450, 90% opaque): the card’s 320×270 box with 90px of clear space round it. Move the pointer
+          The striped box is the window (500×450): the card’s 320×270 box with 90px of clear space round it. Move the pointer
           over or near the card to see the hole. Window glides aren’t simulated.
         </span>
       </div>
@@ -139,7 +142,6 @@ const window_: React.CSSProperties = {
   position: 'relative',
   width: 500, // the card's 320×270 box and its 90px clear margin all round (overlay.ts)
   height: 450,
-  opacity: 0.9,
   outline: '1px dashed rgba(255,255,255,.25)',
   background: 'repeating-linear-gradient(45deg, #3a3f4a 0 12px, #454b57 12px 24px)',
 }
