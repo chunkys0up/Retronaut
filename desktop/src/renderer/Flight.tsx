@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 
+import { cubicBezier } from '../shared/motion'
 import { BUILD_PHASES } from './phases'
 
 /**
@@ -38,7 +39,11 @@ export function captionWidth(from: Box): number {
 
 export const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+export { DROP_SPRING } from '../shared/motion'
+
 const GLIDE = { duration: 860, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' } as const
+const glideEase = cubicBezier(0.22, 1, 0.36, 1)
+const RADIUS = 12 // the composer's corners; the bar's are square
 
 export function PromptFlight({ intro, anchor, card, onLanded }: { intro: Intro; anchor: HTMLElement; card: HTMLElement; onLanded: () => void }) {
   const text = useRef<HTMLDivElement>(null)
@@ -51,17 +56,19 @@ export function PromptFlight({ intro, anchor, card, onLanded }: { intro: Intro; 
     if (!words || !shell) return
     const from = intro.from
 
+    // Everything that moves here moves by transform alone, so it runs on the compositor with
+    // sub-pixel steps: animating left/top/width/height instead lays the page out every frame
+    // and snaps to whole pixels, which the glide's long, slow tail shows as a stutter.
+
     // The text: laid out where it lands; the animation starts it back where the composer was.
+    // (Its height needn't follow: it has no background and is clamped to two lines anyway.)
     const to = anchor.getBoundingClientRect()
     const left = to.left - PAD_X * SCALE
     const top = to.top - PAD_Y * SCALE
     const height = to.height + PAD_Y * SCALE * 2
     Object.assign(words.style, { left: `${left}px`, top: `${top}px`, width: `${intro.width + PAD_X * SCALE * 2}px`, height: `${height}px` })
     const glide = words.animate(
-      [
-        { transform: `translate(${from.left - left}px, ${from.top - top}px) scale(${1 / SCALE})`, height: `${from.height * SCALE}px` },
-        { transform: 'none', height: `${height}px` },
-      ],
+      [{ transform: `translate(${from.left - left}px, ${from.top - top}px) scale(${1 / SCALE})` }, { transform: 'none' }],
       GLIDE,
     )
     const dim = words.animate(
@@ -70,13 +77,13 @@ export function PromptFlight({ intro, anchor, card, onLanded }: { intro: Intro; 
     )
 
     // The box: from the composer's to the build bar's (full width, against the top edge),
-    // white to the bar's dark glass.
+    // white to the bar's dark glass. Laid out as the bar, and scaled down to the composer.
     const target = card.getBoundingClientRect()
+    Object.assign(shell.style, { left: `${target.left}px`, top: `${target.top}px`, width: `${target.width}px`, height: `${target.height}px` })
+    const sx = from.width / target.width
+    const sy = from.height / target.height
     const reshape = shell.animate(
-      [
-        { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` },
-        { left: `${target.left}px`, top: `${target.top}px`, width: `${target.width}px`, height: `${target.height}px` },
-      ],
+      [{ transform: `translate(${from.left - target.left}px, ${from.top - target.top}px) scale(${sx}, ${sy})` }, { transform: 'none' }],
       GLIDE,
     )
     const darken = shell.animate(
@@ -88,8 +95,17 @@ export function PromptFlight({ intro, anchor, card, onLanded }: { intro: Intro; 
       { duration: 450, easing: 'ease-out', fill: 'both' },
     )
     // The bar is square: the corners stay round until the box is nearly there (85% of the
-    // way, on the same easing as the glide), then square off as it meets the edges.
-    const square = shell.animate([{ borderRadius: '12px' }, { offset: 0.85, borderRadius: '12px' }, { borderRadius: '0px' }], GLIDE)
+    // way, on the same easing as the glide), then square off as it meets the edges. The box
+    // is scaled, unevenly, so its radii are set against the scale to look round and 12px.
+    const steps = 32
+    const square = shell.animate(
+      Array.from({ length: steps + 1 }, (_, i) => {
+        const p = glideEase(i / steps)
+        const r = p < 0.85 ? RADIUS : (RADIUS * (1 - p)) / 0.15
+        return { offset: i / steps, borderRadius: `${r / (sx + (1 - sx) * p)}px / ${r / (sy + (1 - sy) * p)}px` }
+      }),
+      { duration: GLIDE.duration, fill: 'both' },
+    )
     // The bar's progress segments along the box's bottom edge, plain grey, coming in as it
     // darkens and spreading out as it widens; the real ones land in the same place. (Their
     // orange, the labels and the bar's title row come in once the bar has settled.)

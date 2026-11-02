@@ -322,7 +322,7 @@ button.brand-button:hover:not(:disabled) {
   overflow: hidden;
   transform-origin: 0 0;
   pointer-events: none;
-  will-change: transform, height;
+  will-change: transform;
 }
 .flight-text,
 .build-caption {
@@ -380,8 +380,9 @@ button.brand-button:hover:not(:disabled) {
   border-radius: var(--radius);
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
+  transform-origin: 0 0;
   pointer-events: none;
-  will-change: left, top, width, height;
+  will-change: transform;
 }
 
 /* The flying box is also a .build-bar, so its progress row lays out like the real one;
