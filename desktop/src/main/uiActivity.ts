@@ -80,7 +80,7 @@ export function reset(): void {
 
 const KEY_NAMES: Record<string, string> = { return: '↵', enter: '↵', tab: 'Tab', escape: 'Esc', esc: 'Esc', space: 'Space', delete: '⌫', backspace: '⌫', up: '↑', down: '↓', left: '←', right: '→' }
 
-/** "cmd+shift+g" -> "⌘⇧G", "down" -> "↓": how the pill shows keys. */
+/** "cmd+shift+g" -> "⌘⇧G", "down" -> "↓": how the activity chip shows keys. */
 export function keyLabel(combo: string): string {
   const parts = combo.toLowerCase().split('+')
   const key = parts.pop() ?? ''
@@ -88,7 +88,7 @@ export function keyLabel(combo: string): string {
   return mods + (KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key))
 }
 
-/** Shorten typed text for the pill. */
+/** Shorten typed text for the activity chip. */
 export function typedLabel(text: string, max = 48): string {
   const one = text.replace(/\s+/g, ' ')
   return `Typing “${one.length > max ? `${one.slice(0, max - 1)}…` : one}”`

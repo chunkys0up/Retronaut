@@ -1795,38 +1795,133 @@ button.link.danger {
 
 /* ---------- picture-in-picture window ---------- */
 
+/* The window is clear and the card carries the background, so it can blur in and out (Pip). */
+:root:has(body.pip-body) {
+  background: transparent;
+}
 body.pip-body {
   background: transparent;
   min-height: 0;
   overflow: hidden;
 }
-/* Just the words: what it's doing and its last three steps. The window itself is
-   translucent and fades away under the pointer (overlay.ts). */
+/* The card sits at the top of the window: what it's doing (the phase, its step and a ring of
+   them) along the top, its last few steps in a rounded panel under that, and, while Retronaut
+   drives an app, an activity chip under the panel, the card growing down into the window's
+   clear space to hold it (the window is as tall as the card with the chip open: overlay.ts's
+   PIP.height). The window itself is translucent and fades away under the pointer, except over
+   the chip (overlay.ts). The window isn't rounded, so the card rounds its own corners, around
+   the steps' panel (its radius plus the card's 8px inset). */
+/* The window is the card's box with this much clear space round it on every side (overlay.ts's
+   PIP.pad), so the card hears the pointer coming near its edges from outside it too. */
+.pip-window {
+  padding: 90px;
+}
+/* The hole the pointer opens in the card (Pip): a radial mask centred on the pointer, clear
+   in the middle and softening to solid at its edge, its radius growing as the pointer comes
+   near and shrinking to nothing as it goes. It's cut in the card's background (::before)
+   and its title and steps (.pip-main), both from the card's top-left corner, but not in
+   the activity chip, which sits above them whole, so the hole shows round and under it
+   and its Stop button can still be clicked. */
+@property --hole-r {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
 .pip {
-  margin: 6px;
+  --hole-x: -999px;
+  --hole-y: -999px;
+  /* Eased from clear to solid (a sine curve, in steps) rather than a straight ramp, which
+     leaves hard rings where it starts and ends. */
+  --hole: radial-gradient(
+    circle at var(--hole-x) var(--hole-y),
+    transparent calc(var(--hole-r) * 0.450),
+    rgba(0, 0, 0, 0.024) calc(var(--hole-r) * 0.505),
+    rgba(0, 0, 0, 0.095) calc(var(--hole-r) * 0.560),
+    rgba(0, 0, 0, 0.206) calc(var(--hole-r) * 0.615),
+    rgba(0, 0, 0, 0.345) calc(var(--hole-r) * 0.670),
+    rgba(0, 0, 0, 0.500) calc(var(--hole-r) * 0.725),
+    rgba(0, 0, 0, 0.655) calc(var(--hole-r) * 0.780),
+    rgba(0, 0, 0, 0.794) calc(var(--hole-r) * 0.835),
+    rgba(0, 0, 0, 0.905) calc(var(--hole-r) * 0.890),
+    rgba(0, 0, 0, 0.976) calc(var(--hole-r) * 0.945),
+    #000 calc(var(--hole-r) * 1.000)
+  );
+  position: relative;
+  isolation: isolate;
+  border-radius: calc(var(--radius) + 8px);
+  transition: --hole-r 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 50% 0; /* growing and shrinking from its top, as the cards do */
+  /* Its own layer: its text is drawn once and blurred and scaled whole as it comes and goes,
+     rather than redrawn (and snapped to the pixel grid) every frame, which stutters. */
+  will-change: transform, filter;
+}
+.pip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: var(--bg);
+  transition: background-color 0.5s ease-in-out;
+  -webkit-mask-image: var(--hole);
+  mask-image: var(--hole);
+}
+.pip-main {
+  -webkit-mask-image: var(--hole);
+  mask-image: var(--hole);
+}
+/* Coming and going (Pip's arrive and leave), the card moves as one still picture: what
+   moves inside it (the chip's sweep, the ring's pulse, the tint's fade, the chip opening or
+   closing) holds still, so the chip comes and goes with the card rather than on its own,
+   and the card's blur isn't redrawn every frame for them. */
+.pip.leaving *,
+.pip.leaving *::before,
+.pip.leaving,
+.pip.leaving::before,
+.pip.arriving .pip-activity,
+.pip.arriving .pip-chip,
+.pip.arriving {
+  transition: none !important;
+}
+.pip.leaving *,
+.pip.leaving *::before {
+  animation-play-state: paused !important;
+}
+/* While its activity chip shows, the whole card takes on a little of the chip's colour,
+   orange while it works, yellow while it waits, fading from one to the other (and back to
+   plain as the chip goes). */
+.pip:has(.pip-activity.open)::before {
+  background-color: color-mix(in srgb, var(--bg) 90%, var(--accent));
+}
+.pip:has(.pip-activity.open.paused)::before {
+  background-color: color-mix(in srgb, var(--bg) 90%, #ffce1b); /* the waiting chip's yellow */
+}
+/* The step ring's lit segments: white while it only watches, the chip's orange or yellow
+   while the chip shows (fading between, as its strokes do). */
+.pip {
+  --ring: #fff;
+}
+.pip:has(.pip-activity.open) {
+  --ring: var(--accent);
+}
+.pip:has(.pip-activity.open.paused) {
+  --ring: #ffce1b;
+}
+/* The title and the steps: the card's whole height while the chip is closed. */
+.pip-main {
+  box-sizing: border-box;
+  height: 170px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: rgba(28, 28, 27, 0.94);
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
+  padding: 12px 8px 8px;
 }
 .pip-title {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 0 6px;
   font-size: 12.5px;
-}
-.brand-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
 }
 .pip-name {
   flex: 1;
@@ -1836,22 +1931,237 @@ body.pip-body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pip-status {
-  flex: none;
-  color: var(--muted);
-}
 .pip-count {
   flex: none;
   color: var(--subtle);
   font-variant-numeric: tabular-nums;
 }
-.pip-steps {
+/* Segments around the ring, from the top, clockwise: done ones lit, the current one glowing
+   (holding still while paused), the rest faint. */
+.pip-ring {
+  flex: none;
+  transform: rotate(-90deg);
+}
+.pip-ring circle {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 3;
+  transition: stroke 0.3s, opacity 0.3s;
+}
+.pip-ring circle.done {
+  stroke: var(--ring);
+}
+.pip-ring circle.now {
+  stroke: var(--ring);
+  animation: pip-now 1.4s ease-in-out infinite alternate;
+}
+.pip-ring circle.now.held {
+  animation: none;
+  opacity: 0.45;
+}
+@keyframes pip-now {
+  from { opacity: 0.3; }
+  to { opacity: 0.8; }
+}
+/* The activity chip's row, in two beats each way. Opening: the card grows down to the chip's
+   height (measured, Pip), then the chip scales up and fades in as it settles. Closing: the
+   chip scales down and fades out, then the card shrinks back up. */
+.pip-activity {
+  height: 0;
+  overflow: hidden;
+  transition: height 0.38s cubic-bezier(0.4, 0, 0.2, 1) 0.16s;
+}
+.pip-activity.open {
+  height: var(--chip-h, 0px);
+  transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Its own block, so the chip's spacing is part of the height measured. */
+.pip-activity-inner {
+  display: flow-root;
+  padding: 0 8px 8px;
+}
+/* A box shaped like the steps' panel above it (its radius), in its colour: orange while it
+   works, yellow while it waits for you, filled with it a shade darker than its border (so
+   the border still shows), with a paler stripe of it sweeping across, left to right, over
+   and over, while it goes on.
+   What's asked of you over what it's doing, and Stop. */
+.pip-chip {
+  --chip: var(--accent);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 9px 9px 14px;
+  border: 1px solid var(--chip);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--chip) 88%, #000);
+  font-size: 12px;
+  white-space: nowrap;
+  transform-origin: 50% 0;
+  opacity: 0;
+  transform: scale(0.94);
+  /* No colour fade: switching between orange and yellow, one chip leaves and the other
+     arrives (Pip's ActivityChip), the colour changing while neither shows. */
+  transition:
+    opacity 0.16s cubic-bezier(0.4, 0, 1, 1),
+    transform 0.16s cubic-bezier(0.4, 0, 1, 1);
+}
+.pip-activity.paused .pip-chip {
+  --chip: #ffce1b;
+}
+.pip-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 60%;
+  /* Eased from clear to its peak and back (a sine curve, in steps), not a straight ramp,
+     which leaves hard lines where it starts and peaks. */
+  background: linear-gradient(
+    90deg,
+    rgba(255, 170, 125, 0.000) 0%,
+    rgba(255, 170, 125, 0.016) 6.25%,
+    rgba(255, 170, 125, 0.062) 12.5%,
+    rgba(255, 170, 125, 0.130) 18.75%,
+    rgba(255, 170, 125, 0.210) 25%,
+    rgba(255, 170, 125, 0.290) 31.25%,
+    rgba(255, 170, 125, 0.358) 37.5%,
+    rgba(255, 170, 125, 0.404) 43.75%,
+    rgba(255, 170, 125, 0.420) 50%,
+    rgba(255, 170, 125, 0.404) 56.25%,
+    rgba(255, 170, 125, 0.358) 62.5%,
+    rgba(255, 170, 125, 0.290) 68.75%,
+    rgba(255, 170, 125, 0.210) 75%,
+    rgba(255, 170, 125, 0.130) 81.25%,
+    rgba(255, 170, 125, 0.062) 87.5%,
+    rgba(255, 170, 125, 0.016) 93.75%,
+    rgba(255, 170, 125, 0.000) 100%
+  );
+  transform: translateX(-100%);
+  animation: pip-chip-sweep 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes pip-chip-sweep {
+  to { transform: translateX(calc(100% / 0.6)); }
+}
+.pip-activity.open .pip-chip {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.28s cubic-bezier(0.33, 1, 0.68, 1) 0.22s,
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.22s;
+}
+.pip-chip-text {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+}
+.pip-chip-main,
+.pip-chip-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pip-chip-main {
+  font-size: 17px;
+  color: var(--text);
+}
+.pip-chip-sub {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text); /* as the line above, bold too; a little fainter, and smaller */
+  opacity: 0.65;
+}
+/* Waiting for you: black words on the yellow (white is hard to read on it), its second line
+   a little fainter as on the orange; its Stop button black on a darker shade of the yellow;
+   its sweep a paler yellow. */
+.pip-activity.paused .pip-chip-main,
+.pip-activity.paused .pip-chip-sub {
+  color: #000;
+}
+.pip-activity.paused .pip-chip-stop:not(:hover) {
+  color: #000;
+  background: rgba(0, 0, 0, 0.12);
+}
+.pip-activity.paused .pip-chip::before {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 236, 160, 0.000) 0%,
+    rgba(255, 236, 160, 0.017) 6.25%,
+    rgba(255, 236, 160, 0.066) 12.5%,
+    rgba(255, 236, 160, 0.139) 18.75%,
+    rgba(255, 236, 160, 0.225) 25%,
+    rgba(255, 236, 160, 0.311) 31.25%,
+    rgba(255, 236, 160, 0.384) 37.5%,
+    rgba(255, 236, 160, 0.433) 43.75%,
+    rgba(255, 236, 160, 0.450) 50%,
+    rgba(255, 236, 160, 0.433) 56.25%,
+    rgba(255, 236, 160, 0.384) 62.5%,
+    rgba(255, 236, 160, 0.311) 68.75%,
+    rgba(255, 236, 160, 0.225) 75%,
+    rgba(255, 236, 160, 0.139) 81.25%,
+    rgba(255, 236, 160, 0.066) 87.5%,
+    rgba(255, 236, 160, 0.017) 93.75%,
+    rgba(255, 236, 160, 0.000) 100%
+  );
+}
+.pip-chip-stop {
+  flex: none;
+  align-self: stretch; /* as tall as the chip's text, inset evenly top, bottom and right */
+  height: auto; /* not App.css's fixed button height */
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 0 14px;
+  cursor: pointer;
+}
+/* Hovered: a nearly white pill with bright red words, standing clear of the orange or yellow
+   around it. Scoped under .pip-chip to outrank App.css's button:hover. */
+.pip-chip .pip-chip-stop:hover {
+  background: rgba(255, 255, 255, 0.8);
+  color: #f2141a;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pip,
+  .pip::before,
+  .pip-activity,
+  .pip-chip {
+    transition: none !important;
+  }
+  .pip-chip::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+.pip-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+/* Newest at the bottom, the older ones stacking up and fading out under the top edge. */
+.pip-steps {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   gap: 6px;
   margin: 0;
-  padding: 0;
+  padding: 10px 12px;
   list-style: none;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 10px, #000 40px);
+  mask-image: linear-gradient(to bottom, transparent 10px, #000 40px);
 }
 .pip-steps li {
   display: flex;

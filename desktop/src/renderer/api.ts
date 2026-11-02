@@ -30,7 +30,8 @@ type Bridge = {
   openExternal: (url: string) => Promise<void>
   openPrivacy: (pane: 'accessibility' | 'screen') => Promise<void>
   onAttention: (listener: (workflowId: string) => void) => () => void
-  pipHover: (over: boolean) => void
+  pipChipHover: (over: boolean) => void
+  stopLive: () => void
 }
 const bridge = (window as unknown as { retronaut?: Bridge }).retronaut
 
@@ -45,9 +46,14 @@ export function openPrivacy(pane: 'accessibility' | 'screen'): void {
 
 export const inElectron = Boolean(bridge)
 
-/** Tell the picture-in-picture's window the pointer is over it, or has left. */
-export function pipHover(over: boolean): void {
-  bridge?.pipHover(over)
+/** Tell it the pointer is over the activity chip (it stays, and takes clicks), or has left. */
+export function pipChipHover(over: boolean): void {
+  bridge?.pipChipHover(over)
+}
+
+/** Stop the live build or run (the activity chip's Stop button). */
+export function stopLive(): void {
+  bridge?.stopLive()
 }
 
 /** When the engine needs the person on a workflow's page (Electron only). */

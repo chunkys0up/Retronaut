@@ -1,4 +1,4 @@
-/** The little the renderer needs from Electron: open links and System Settings panes, and the frame's pill. */
+/** The little the renderer needs from Electron: open links and System Settings panes, and the picture-in-picture's chip and Stop. */
 
 import { contextBridge, ipcRenderer } from 'electron'
 
@@ -11,10 +11,8 @@ contextBridge.exposeInMainWorld('retronaut', {
     ipcRenderer.on('attention', handler)
     return () => ipcRenderer.removeListener('attention', handler)
   },
-  overlay: {
-    hover: (over: boolean) => ipcRenderer.send('overlay-hover', over),
-    stop: () => ipcRenderer.send('overlay-stop'),
-  },
-  /** The pointer is over the picture-in-picture (it fades away) or has left it. */
-  pipHover: (over: boolean) => ipcRenderer.send('pip-hover', over),
+  /** The picture-in-picture's activity chip's Stop button: stop the build or run. */
+  stopLive: () => ipcRenderer.send('overlay-stop'),
+  /** The pointer is over the picture-in-picture's activity chip (it stays, and takes clicks) or has left it. */
+  pipChipHover: (over: boolean) => ipcRenderer.send('pip-chip-hover', over),
 })
