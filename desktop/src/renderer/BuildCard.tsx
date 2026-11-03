@@ -152,6 +152,7 @@ export function BuildCard({
   onPause,
   cardRef,
   bar,
+  bare = false,
 }: {
   job: JobSnapshot
   onStop?: () => void
@@ -160,6 +161,8 @@ export function BuildCard({
   cardRef?: (el: HTMLElement | null) => void
   /** Shown as the bar across the top of the page (a build), with this caption inside. */
   bar?: { caption: ReactNode }
+  /** Just its contents, no card of its own: for a card around it and more (the workflow bar). */
+  bare?: boolean
 }) {
   const [now, setNow] = useState(() => Date.now() / 1000)
   const running = live(job.status)
@@ -263,7 +266,7 @@ export function BuildCard({
     )
   }
   return (
-    <section ref={cardRef} className={`card build ${state}`} aria-live="polite">
+    <section ref={cardRef} className={`${bare ? 'build-bare' : 'card'} build ${state}`} aria-live="polite">
       {content}
     </section>
   )

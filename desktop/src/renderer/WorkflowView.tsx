@@ -514,6 +514,9 @@ function JobPanel({
   )
 }
 
+/** How long a passed run's card stays, green, before it closes (its colour eases over 0.4s of it). */
+const FINISH_HOLD_MS = 1500
+
 /** The workflow bar's tabs: an overview, the plan and its script, and the runs. */
 const WF_TABS = ['Overview', 'Workflow details', 'Run history']
 
@@ -653,8 +656,6 @@ export function WorkflowView({
     }
   }
 
-  const lastRun = useMemo(() => wf?.runs.find((r) => r.kind === 'run'), [wf])
-
   // While it builds, its progress is a bar across the top of the page, with the prompt in
   // it as a dim caption; the send animation's box becomes that bar, its text the caption.
   const building = wf ? wf.status === 'building' : intro !== null
@@ -692,7 +693,8 @@ export function WorkflowView({
     return () => cancelAnimationFrame(frame)
   }, [arriving])
   const panel = shown && !arriving && !held && (
-    <JobPanel job={shown} onAnswer={answer} onStop={stop} onPause={pause} spring={building} withCard={!building} />
+    // A run's progress card is up in the workflow bar instead (below); the rest stays here.
+    <JobPanel job={shown} onAnswer={answer} onStop={stop} onPause={pause} spring={building} withCard={!building && shown.kind !== 'run'} />
   )
 
   const built = !building && wf !== null
@@ -721,6 +723,48 @@ export function WorkflowView({
     }
   }, [built])
 
+  // Scrolled down the page while a run goes, its card closes up to just the header row,
+  // opening again only back at the very top. Only if the page stays scrolled once it's
+  // closed: on a short page, closing would pull it back to the top, open it again, and loop.
+  const busy = live(job?.status)
+  const runningNow = busy && job?.kind === 'run'
+  // A run that passes doesn't close at once: its card turns green (border and blocks) and
+  // stays a moment, then closes. Failed or stopped, it closes straight away (the alert under
+  // the bar says why). Worked out as the run stops, in the same render (not after it), so the
+  // card is never closed for a frame in between; it stays green, closed, until the next run.
+  const [wasRunning, setWasRunning] = useState(runningNow)
+  const [finishing, setFinishing] = useState(false)
+  const [passed, setPassed] = useState(false)
+  if (wasRunning !== runningNow) {
+    setWasRunning(runningNow)
+    const ok = !runningNow && job?.kind === 'run' && job.status === 'passed'
+    setFinishing(ok)
+    setPassed(ok)
+  }
+  useEffect(() => {
+    if (!finishing) return
+    const timer = setTimeout(() => setFinishing(false), FINISH_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [finishing])
+  const cardOpen = runningNow || finishing
+
+  const [tucked, setTucked] = useState(false)
+  useEffect(() => {
+    const main = page.current?.closest('.main')
+    if (!built || !main) return
+    const onScroll = () => {
+      if (main.scrollTop <= 2) return setTucked(false)
+      setTucked((was) => {
+        if (was) return true
+        const run = main.querySelector<HTMLElement>('.wf-head.running .wf-bar-run-inner')
+        return run !== null && main.scrollHeight - main.clientHeight - run.offsetHeight > 2
+      })
+    }
+    onScroll()
+    main.addEventListener('scroll', onScroll, { passive: true })
+    return () => main.removeEventListener('scroll', onScroll)
+  }, [built])
+
   if (!wf) {
     return (
       <>
@@ -733,30 +777,44 @@ export function WorkflowView({
     )
   }
 
-  const busy = live(job?.status)
   // Once built, the title, the prompt, its status and Run now sit in a glass bar across the
   // top, as the build's progress did, with tabs along its bottom edge where the progress was.
   const head = !building && (
     <div className="build-bar-wrap">
       <section className="build-bar wf-bar">
         <div className="build-bar-inner">
-          <header className="view-head">
-            <div className="view-title">
-              <h1 title={wf.title}>{wf.title}</h1>
+          {/* While a run goes, the header becomes the top of its progress card: the card fades
+              and settles in around it, the header shrinking a little into it, and the run's
+              progress opens under it. When the run ends, it all eases back. */}
+          <div className={`wf-head${cardOpen ? ' running' : ''}${passed ? ' passed' : ''}${cardOpen && tucked ? ' tucked' : ''}`}>
+            <header className="view-head">
+              <div className="view-title">
+                <h1 title={wf.title}>{wf.title}</h1>
+              </div>
+              <div className="view-actions">
+                <span className={`badge ${runningNow ? 'badge-running' : `badge-wf-${wf.status}`}`} role="status">
+                  <span className="badge-dot" aria-hidden="true" />
+                  {runningNow ? 'Running' : STATUS_LABEL[wf.status]}
+                </span>
+                {/* While its run goes, Run now becomes its Stop (the card under it has none). Both
+                    labels sit in the button, one hidden, so it keeps Run now's width. */}
+                {wf.script && (
+                  <button
+                    type="button"
+                    className={`run-stop${runningNow ? ' secondary stop' : ''}`}
+                    onClick={runningNow ? stop : run}
+                    disabled={busy && !runningNow}
+                  >
+                    <span className={runningNow ? 'off' : undefined}>Run now</span>
+                    <span className={runningNow ? undefined : 'off'}>Stop</span>
+                  </button>
+                )}
+              </div>
+            </header>
+            <div className="wf-bar-run" inert={!cardOpen}>
+              <div className="wf-bar-run-inner">{job?.kind === 'run' && <BuildCard job={job} onPause={pause} bare />}</div>
             </div>
-            <div className="view-actions">
-              <span className={`badge badge-wf-${wf.status}`} role="status">
-                <span className="badge-dot" aria-hidden="true" />
-                {busy && job?.kind === 'run' ? 'Running' : STATUS_LABEL[wf.status]}
-              </span>
-              {wf.script && (
-                <button type="button" onClick={run} disabled={busy}>
-                  {busy && job?.kind === 'run' && <span className="spinner" aria-hidden="true" />}
-                  Run now
-                </button>
-              )}
-            </div>
-          </header>
+          </div>
         </div>
         <div className="wf-tabs" role="tablist" aria-label="Workflow sections">
           {WF_TABS.map((label, i) => (
@@ -821,15 +879,9 @@ export function WorkflowView({
               </section>
             )}
 
+            {/* Just the runs, newest first, as a list on the page rather than in a card. */}
             {tab === 2 && (
-              <section className="card">
-                <div className="card-head">
-                  <h2>Runs</h2>
-                  <span className="muted small">
-                    {lastRun ? `Last run ${when(lastRun.started)}` : 'Not run yet'}
-                    {wf.heals > 0 && ` · healed itself ${wf.heals}×`}
-                  </span>
-                </div>
+              <section className="run-history" aria-label="Run history">
                 {wf.runs.length === 0 ? (
                   <p className="muted small">No runs yet.</p>
                 ) : (
