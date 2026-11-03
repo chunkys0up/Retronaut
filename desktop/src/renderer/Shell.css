@@ -576,6 +576,51 @@ button.brand-button:hover:not(:disabled) {
 .wf-head.running .view-head {
   min-height: 36px;
 }
+/* The run's own card on the Overview tab (WorkflowView's wf-run-slot): its row opens from
+   nothing as a run starts, the card easing in as it does (an animation: it appears then,
+   so a transition would have nothing to start from), its border the running orange,
+   easing to green if the run passes, and closes up as the card eases out at the end. The
+   slot gives back the panel's gap while it's closed. */
+.wf-run-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-bottom: -18px; /* .wf-tab-panel's gap, while closed */
+  transition:
+    grid-template-rows 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    margin-bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wf-run-slot.open {
+  grid-template-rows: 1fr;
+  margin-bottom: 0;
+}
+.wf-run-slot-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.wf-run-card {
+  border-color: rgba(255, 70, 8, 0.35); /* the running card's border (.build-live) */
+  transform-origin: 50% 0;
+}
+.wf-run-slot.open .wf-run-card {
+  animation: run-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.wf-run-slot:not(.open) .wf-run-card {
+  animation: run-card-out 0.3s ease-in both;
+}
+.wf-run-slot.passed .wf-run-card {
+  border-color: rgba(52, 211, 153, 0.45);
+  transition: border-color 0.4s ease;
+}
+@keyframes run-card-in {
+  from { opacity: 0; transform: scale(0.98); }
+}
+@keyframes run-card-out {
+  to { opacity: 0; transform: scale(0.98); }
+}
+/* In its own card, the run's progress needs no room above it (the card's padding has it). */
+.wf-run-card .build-bare {
+  padding-top: 0;
+}
 /* Run now and Stop share one button, both labels in it on top of each other, the other one
    faded out: as wide as the wider (Run now) either way, so turning into Stop doesn't jump. */
 button.run-stop {
@@ -612,7 +657,7 @@ button.run-stop {
     transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.4s ease;
 }
-.wf-head.passed .build-bare .blocks span {
+.passed .build-bare .blocks span {
   transition: background-color 0.4s ease, box-shadow 0.4s ease, transform 0.4s ease, opacity 0.4s ease;
 }
 .wf-head .view-actions {

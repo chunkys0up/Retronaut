@@ -514,6 +514,11 @@ function JobPanel({
   )
 }
 
+/** The run's card closing up to the header row as the page scrolls (WorkflowView's tucked):
+ *  off for now, since the run's progress is its own card on the Overview tab, not in the
+ *  header; kept for when it moves back. */
+const TUCK_ON_SCROLL = false
+
 /** How long a passed run's card stays, green, before it closes (its colour eases over 0.4s of it). */
 const FINISH_HOLD_MS = 1500
 
@@ -786,7 +791,7 @@ export function WorkflowView({
           {/* While a run goes, the header becomes the top of its progress card: the card fades
               and settles in around it, the header shrinking a little into it, and the run's
               progress opens under it. When the run ends, it all eases back. */}
-          <div className={`wf-head${cardOpen ? ' running' : ''}${passed ? ' passed' : ''}${cardOpen && tucked ? ' tucked' : ''}`}>
+          <div className={`wf-head${cardOpen ? ' running' : ''}${passed ? ' passed' : ''}${TUCK_ON_SCROLL && cardOpen && tucked ? ' tucked' : ''}`}>
             <header className="view-head">
               <div className="view-title">
                 <h1 title={wf.title}>{wf.title}</h1>
@@ -811,9 +816,6 @@ export function WorkflowView({
                 )}
               </div>
             </header>
-            <div className="wf-bar-run" inert={!cardOpen}>
-              <div className="wf-bar-run-inner">{job?.kind === 'run' && <BuildCard job={job} onPause={pause} bare />}</div>
-            </div>
           </div>
         </div>
         <div className="wf-tabs" role="tablist" aria-label="Workflow sections">
@@ -851,12 +853,25 @@ export function WorkflowView({
         {wf.status !== 'building' && (
           <div className="wf-tab-panel" id="wf-tab-panel" role="tabpanel" aria-labelledby={`wf-tab-${tab}`}>
             {tab === 0 && (
-              <section className="card">
-                <div className="card-head">
-                  <h2>Prompt</h2>
+              <>
+                {/* The run's progress, its own card above the prompt: in as the run starts,
+                    green for a moment if it passes, out as it ends (Stop is in the header). */}
+                <div className={`wf-run-slot${cardOpen ? ' open' : ''}${passed ? ' passed' : ''}`} inert={!cardOpen}>
+                  <div className="wf-run-slot-inner">
+                    {job?.kind === 'run' && (
+                      <section className="card wf-run-card">
+                        <BuildCard job={job} onPause={pause} bare />
+                      </section>
+                    )}
+                  </div>
                 </div>
-                <p className="muted goal">“{wf.goal}”</p>
-              </section>
+                <section className="card">
+                  <div className="card-head">
+                    <h2>Prompt</h2>
+                  </div>
+                  <p className="muted goal">“{wf.goal}”</p>
+                </section>
+              </>
             )}
 
             {tab === 1 && (
