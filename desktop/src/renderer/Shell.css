@@ -295,8 +295,8 @@ button.brand-button:hover:not(:disabled) {
   background: var(--glow-soft);
   background-attachment: fixed;
 }
-/* The Run history tab is the plain list, without the orange glow along the bottom. */
-.main:has(#wf-tab-2[aria-selected='true']) {
+/* A built workflow's page (its tabs), without the orange glow along the bottom. */
+.main:has(.wf-bar) {
   background: none;
 }
 /* The home screen's full glow sits behind the main area and crossfades, so leaving
@@ -311,6 +311,10 @@ button.brand-button:hover:not(:disabled) {
 }
 .glow-layer.on {
   opacity: 1;
+}
+/* From home to a workflow it goes at once (App's glowSnap). */
+.glow-layer.snap {
+  transition: none;
 }
 
 /* ---------- the send animation ---------- */
@@ -514,12 +518,18 @@ button.brand-button:hover:not(:disabled) {
    progress did, sharing the header's width, and one accent underline slides along the
    border to the chosen one. */
 /* The bar keeps one height: room for a two-line title (--title at 1.25, .view-head h1), a
-   longer one cut to two lines with an ellipsis, a shorter one centred in that room with
-   the status and Run now beside it. */
+   longer one cut to two lines with an ellipsis. */
 .wf-bar .view-head {
   min-height: calc(2 * var(--title) * 1.25);
-  align-items: center;
+  /* Run now (or Stop) pinned to the top right, not centred on the title and prompt: the
+     row from the top, the title's first line centred on the 36px button by a little room
+     above it (half the difference; it eases with the title's size as a run starts). */
+  align-items: flex-start;
   transition: min-height 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wf-bar .view-title {
+  margin-top: calc((36px - var(--title) * 1.25) / 2);
+  transition: margin-top 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .wf-bar .view-head h1 {
   display: -webkit-box;
@@ -527,7 +537,43 @@ button.brand-button:hover:not(:disabled) {
   -webkit-line-clamp: 2;
   overflow: hidden;
   font-size: var(--title);
-  transition: font-size 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    font-size 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.4s ease;
+}
+/* The prompt under the title (WorkflowView's wf-goal), cut to two lines: it folds away
+   (its row closing to nothing as it fades) when a run's progress takes its place, or when
+   the page is scrolled (.tucked), and opens again after. */
+.wf-goal {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wf-goal-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.wf-goal .goal {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 6px;
+  transition: opacity 0.3s ease 0.1s;
+}
+.wf-head.running .wf-goal,
+.wf-head.tucked .wf-goal {
+  grid-template-rows: 0fr;
+}
+.wf-head.running .wf-goal .goal,
+.wf-head.tucked .wf-goal .goal {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+/* While a run goes, the title is dimmed (the status and Stop beside it aren't); it comes back
+   up as the run passes (.passed) or ends. */
+.wf-head.running:not(.passed) .view-head h1 {
+  color: rgba(247, 246, 244, 0.55); /* --text, dimmed */
 }
 .wf-bar .build-bar-inner {
   gap: 0; /* the run's card brings its own room (.wf-bar-run) */
@@ -576,51 +622,6 @@ button.brand-button:hover:not(:disabled) {
 .wf-head.running .view-head {
   min-height: 36px;
 }
-/* The run's own card on the Overview tab (WorkflowView's wf-run-slot): its row opens from
-   nothing as a run starts, the card easing in as it does (an animation: it appears then,
-   so a transition would have nothing to start from), its border the running orange,
-   easing to green if the run passes, and closes up as the card eases out at the end. The
-   slot gives back the panel's gap while it's closed. */
-.wf-run-slot {
-  display: grid;
-  grid-template-rows: 0fr;
-  margin-bottom: -18px; /* .wf-tab-panel's gap, while closed */
-  transition:
-    grid-template-rows 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-    margin-bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.wf-run-slot.open {
-  grid-template-rows: 1fr;
-  margin-bottom: 0;
-}
-.wf-run-slot-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-.wf-run-card {
-  border-color: rgba(255, 70, 8, 0.35); /* the running card's border (.build-live) */
-  transform-origin: 50% 0;
-}
-.wf-run-slot.open .wf-run-card {
-  animation: run-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.wf-run-slot:not(.open) .wf-run-card {
-  animation: run-card-out 0.3s ease-in both;
-}
-.wf-run-slot.passed .wf-run-card {
-  border-color: rgba(52, 211, 153, 0.45);
-  transition: border-color 0.4s ease;
-}
-@keyframes run-card-in {
-  from { opacity: 0; transform: scale(0.98); }
-}
-@keyframes run-card-out {
-  to { opacity: 0; transform: scale(0.98); }
-}
-/* In its own card, the run's progress needs no room above it (the card's padding has it). */
-.wf-run-card .build-bare {
-  padding-top: 0;
-}
 /* Run now and Stop share one button, both labels in it on top of each other, the other one
    faded out: as wide as the wider (Run now) either way, so turning into Stop doesn't jump. */
 button.run-stop {
@@ -634,10 +635,6 @@ button.run-stop {
 .run-stop > .off {
   opacity: 0;
   visibility: hidden;
-}
-/* Running: orange, as the status for a run, but without the ping (the card says enough). */
-.wf-head .badge-running .badge-dot::after {
-  content: none;
 }
 .wf-head.running::before {
   opacity: 1;
@@ -657,15 +654,16 @@ button.run-stop {
     transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.4s ease;
 }
-.passed .build-bare .blocks span {
-  transition: background-color 0.4s ease, box-shadow 0.4s ease, transform 0.4s ease, opacity 0.4s ease;
-}
 .wf-head .view-actions {
   transform-origin: right center;
   transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .wf-head.running .view-actions {
   transform: scale(0.9);
+}
+/* The run passed: its card's blocks ease to green, the tiles gliding to rest as they stop. */
+.passed .build-bare .blocks span {
+  transition: background-color 0.4s ease, box-shadow 0.4s ease, transform 0.4s ease, opacity 0.4s ease;
 }
 .wf-bar-run {
   display: grid;
@@ -1679,10 +1677,15 @@ dialog.log-popup::backdrop {
   align-items: center;
   padding: 20px 24px 4px;
 }
-/* Short logs leave the card at their own height; long ones scroll, with the same eased
-   fades as the build's log at its top and bottom edges. */
+/* The log's card is always its full height (as tall as a long log would make it), so it
+   doesn't open short with the first few steps and grow; the log fills it, scrolling once
+   it's longer, with the same eased fades as the build's log at its top and bottom edges.
+   Other popups (a plan step's) still fit what they hold. */
+.log-popup-view:has(> .step-list) {
+  height: min(560px, 100%);
+}
 .log-popup .step-list {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   padding: 16px 20px 24px;
   --fade-top-from: 0px;
   --fade-top-to: 16px;

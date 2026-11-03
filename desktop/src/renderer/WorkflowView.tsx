@@ -7,13 +7,6 @@ import { api, live, openExternal, type JobSnapshot, type Plan, type RunSummary, 
 
 const POLL_MS = 900
 
-const STATUS_LABEL: Record<Workflow['status'], string> = {
-  building: 'Building',
-  ready: 'Ready',
-  needs_attention: 'Needs attention',
-  failed: 'Build failed',
-}
-
 const HOW_LABEL: Record<string, string> = {
   connector: 'Account',
   file: 'Data file',
@@ -514,11 +507,6 @@ function JobPanel({
   )
 }
 
-/** The run's card closing up to the header row as the page scrolls (WorkflowView's tucked):
- *  off for now, since the run's progress is its own card on the Overview tab, not in the
- *  header; kept for when it moves back. */
-const TUCK_ON_SCROLL = false
-
 /** How long a passed run's card stays, green, before it closes (its colour eases over 0.4s of it). */
 const FINISH_HOLD_MS = 1500
 
@@ -728,9 +716,10 @@ export function WorkflowView({
     }
   }, [built])
 
-  // Scrolled down the page while a run goes, its card closes up to just the header row,
-  // opening again only back at the very top. Only if the page stays scrolled once it's
-  // closed: on a short page, closing would pull it back to the top, open it again, and loop.
+  // Scrolled down the page, the header closes up to just its title row (the prompt under it,
+  // or a run's progress card), opening again only back at the very top. Only if the page
+  // stays scrolled once it's closed: on a short page, closing would pull it back to the top,
+  // open it again, and loop.
   const busy = live(job?.status)
   const runningNow = busy && job?.kind === 'run'
   // A run that passes doesn't close at once: its card turns green (border and blocks) and
@@ -761,8 +750,9 @@ export function WorkflowView({
       if (main.scrollTop <= 2) return setTucked(false)
       setTucked((was) => {
         if (was) return true
-        const run = main.querySelector<HTMLElement>('.wf-head.running .wf-bar-run-inner')
-        return run !== null && main.scrollHeight - main.clientHeight - run.offsetHeight > 2
+        const part =
+          main.querySelector<HTMLElement>('.wf-head.running .wf-bar-run-inner') ?? main.querySelector<HTMLElement>('.wf-head .wf-goal-inner')
+        return part !== null && main.scrollHeight - main.clientHeight - part.offsetHeight > 2
       })
     }
     onScroll()
@@ -791,16 +781,21 @@ export function WorkflowView({
           {/* While a run goes, the header becomes the top of its progress card: the card fades
               and settles in around it, the header shrinking a little into it, and the run's
               progress opens under it. When the run ends, it all eases back. */}
-          <div className={`wf-head${cardOpen ? ' running' : ''}${passed ? ' passed' : ''}${TUCK_ON_SCROLL && cardOpen && tucked ? ' tucked' : ''}`}>
+          <div className={`wf-head${cardOpen ? ' running' : ''}${passed ? ' passed' : ''}${tucked ? ' tucked' : ''}`}>
             <header className="view-head">
               <div className="view-title">
                 <h1 title={wf.title}>{wf.title}</h1>
+                {/* The prompt under the title, until a run's progress takes its place or the
+                    page is scrolled (then just the title shows). */}
+                <div className="wf-goal" inert={cardOpen || tucked}>
+                  <div className="wf-goal-inner">
+                    <p className="muted goal" title={wf.goal}>
+                      “{wf.goal}”
+                    </p>
+                  </div>
+                </div>
               </div>
               <div className="view-actions">
-                <span className={`badge ${runningNow ? 'badge-running' : `badge-wf-${wf.status}`}`} role="status">
-                  <span className="badge-dot" aria-hidden="true" />
-                  {runningNow ? 'Running' : STATUS_LABEL[wf.status]}
-                </span>
                 {/* While its run goes, Run now becomes its Stop (the card under it has none). Both
                     labels sit in the button, one hidden, so it keeps Run now's width. */}
                 {wf.script && (
@@ -816,6 +811,9 @@ export function WorkflowView({
                 )}
               </div>
             </header>
+            <div className="wf-bar-run" inert={!cardOpen}>
+              <div className="wf-bar-run-inner">{job?.kind === 'run' && <BuildCard job={job} onPause={pause} bare />}</div>
+            </div>
           </div>
         </div>
         <div className="wf-tabs" role="tablist" aria-label="Workflow sections">
@@ -853,25 +851,12 @@ export function WorkflowView({
         {wf.status !== 'building' && (
           <div className="wf-tab-panel" id="wf-tab-panel" role="tabpanel" aria-labelledby={`wf-tab-${tab}`}>
             {tab === 0 && (
-              <>
-                {/* The run's progress, its own card above the prompt: in as the run starts,
-                    green for a moment if it passes, out as it ends (Stop is in the header). */}
-                <div className={`wf-run-slot${cardOpen ? ' open' : ''}${passed ? ' passed' : ''}`} inert={!cardOpen}>
-                  <div className="wf-run-slot-inner">
-                    {job?.kind === 'run' && (
-                      <section className="card wf-run-card">
-                        <BuildCard job={job} onPause={pause} bare />
-                      </section>
-                    )}
-                  </div>
+              <section className="card">
+                <div className="card-head">
+                  <h2>Prompt</h2>
                 </div>
-                <section className="card">
-                  <div className="card-head">
-                    <h2>Prompt</h2>
-                  </div>
-                  <p className="muted goal">“{wf.goal}”</p>
-                </section>
-              </>
+                <p className="muted goal">“{wf.goal}”</p>
+              </section>
             )}
 
             {tab === 1 && (

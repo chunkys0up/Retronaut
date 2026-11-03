@@ -111,6 +111,7 @@ export default function App() {
   // Sending a prompt: the home screen fades out around it while it flies to the build page.
   const [intro, setIntro] = useState<Intro | null>(null)
   const [leaving, setLeaving] = useState(false)
+  const [glowSnap, setGlowSnap] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null) // the caption the text lands on
   const [cardAnchor, setCardAnchor] = useState<HTMLElement | null>(null) // the progress card the box becomes
 
@@ -142,6 +143,9 @@ export default function App() {
   function go(next: View) {
     if (next.name !== 'workflow' || next.id !== intro?.id) setIntro(null)
     setLeaving(false)
+    // From home to a workflow, the home glow goes at once (fading, it lingers behind the
+    // workflow); every other switch, and sending a new prompt, keeps its fade.
+    setGlowSnap(view.name === 'home' && next.name === 'workflow')
     setView(next)
   }
 
@@ -228,7 +232,7 @@ export default function App() {
       </aside>
 
       {/* The home screen's full glow, crossfading with the dimmer one behind other pages. */}
-      <div className={`glow-layer${view.name === 'home' && !leaving ? ' on' : ''}`} aria-hidden="true" />
+      <div className={`glow-layer${view.name === 'home' && !leaving ? ' on' : ''}${glowSnap ? ' snap' : ''}`} aria-hidden="true" />
 
       <main className="main">
         <div className="drag" aria-hidden="true" />
