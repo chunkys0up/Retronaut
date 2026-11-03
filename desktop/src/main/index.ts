@@ -55,6 +55,7 @@ function attend(workflowId: string): void {
   if (win.isMinimized()) win.restore()
   win.show()
   app.focus({ steal: true })
+  win.focus() // the window itself, not just the app, so it takes the keyboard
   win.webContents.send('attention', workflowId)
 }
 

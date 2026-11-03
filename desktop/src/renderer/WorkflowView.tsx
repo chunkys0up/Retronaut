@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
-import { BuildCard, EventList } from './BuildCard'
+import { BuildCard } from './BuildCard'
 import { DROP_SPRING, prefersReducedMotion, type Intro } from './Flight'
 import { ActivityPopup, FEED_OUT_MS, Popup, StepFeed } from './StepFeed'
 import { api, live, openExternal, type JobSnapshot, type Plan, type RunSummary, type UserRequest, type Workflow } from './api'
@@ -513,23 +513,35 @@ const FINISH_HOLD_MS = 1500
 /** The workflow bar's tabs: an overview, the plan and its script, and the runs. */
 const WF_TABS = ['Overview', 'Workflow details', 'Run history']
 
+/** A past run in Run history: clicked, its log opens in a popup, as the live run's Activity does. */
 function RunRow({ wfId, run }: { wfId: string; run: RunSummary }) {
   const [detail, setDetail] = useState<JobSnapshot | null>(null)
   const [open, setOpen] = useState(false)
-  const toggle = async () => {
-    setOpen(!open)
-    if (!detail) setDetail(await api<JobSnapshot>(`/workflows/${wfId}/runs/${run.job_id}`).catch(() => null))
+  const show = async () => {
+    const snap = detail ?? (await api<JobSnapshot>(`/workflows/${wfId}/runs/${run.job_id}`).catch(() => null))
+    if (!snap) return
+    setDetail(snap)
+    setOpen(true)
   }
   const ok = run.status === 'passed'
+  const name = run.kind === 'build' ? 'Build + test run' : run.healed ? 'Run · healed' : 'Run'
   return (
     <li className="run">
-      <button type="button" className="run-row" onClick={toggle} aria-expanded={open}>
+      <button type="button" className="run-row" onClick={show} aria-haspopup="dialog">
         <span className={`dot ${ok ? 'dot-ok' : 'dot-fail'}`} aria-hidden="true" />
-        <span className="run-kind">{run.kind === 'build' ? 'Build + test run' : run.healed ? 'Run · healed' : 'Run'}</span>
+        <span className="run-kind">{name}</span>
         <span className="muted small run-what">{ok ? summaryText(run.summary) : run.error}</span>
         <span className="muted small run-when">{when(run.started)}</span>
       </button>
-      {open && detail && <EventList events={detail.events.filter((e) => e.kind !== 'agent')} start={detail.started} />}
+      {detail && (
+        <ActivityPopup
+          open={open}
+          title={`${name} · ${when(run.started)}`}
+          events={detail.events.filter((e) => e.kind !== 'agent')}
+          start={detail.started}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </li>
   )
 }
@@ -723,17 +735,19 @@ export function WorkflowView({
   const busy = live(job?.status)
   const runningNow = busy && job?.kind === 'run'
   // A run that passes doesn't close at once: its card turns green (border and blocks) and
-  // stays a moment, then closes. Failed or stopped, it closes straight away (the alert under
-  // the bar says why). Worked out as the run stops, in the same render (not after it), so the
-  // card is never closed for a frame in between; it stays green, closed, until the next run.
+  // stays a moment, then closes; one that stops on purpose for review does the same in yellow.
+  // Failed or stopped, it closes straight away (the alert under the bar says why). Worked out
+  // as the run stops, in the same render (not after it), so the card is never closed for a
+  // frame in between; it keeps its colour, closed, until the next run.
   const [wasRunning, setWasRunning] = useState(runningNow)
   const [finishing, setFinishing] = useState(false)
-  const [passed, setPassed] = useState(false)
+  const [ending, setEnding] = useState<'passed' | 'review' | null>(null)
   if (wasRunning !== runningNow) {
     setWasRunning(runningNow)
-    const ok = !runningNow && job?.kind === 'run' && job.status === 'passed'
-    setFinishing(ok)
-    setPassed(ok)
+    const how =
+      runningNow || job?.kind !== 'run' ? null : job.status === 'passed' ? 'passed' : job.result?.review === true ? 'review' : null
+    setFinishing(how !== null)
+    setEnding(how)
   }
   useEffect(() => {
     if (!finishing) return
@@ -781,7 +795,7 @@ export function WorkflowView({
           {/* While a run goes, the header becomes the top of its progress card: the card fades
               and settles in around it, the header shrinking a little into it, and the run's
               progress opens under it. When the run ends, it all eases back. */}
-          <div className={`wf-head${cardOpen ? ' running' : ''}${passed ? ' passed' : ''}${tucked ? ' tucked' : ''}`}>
+          <div className={`wf-head${cardOpen ? ' running' : ''}${ending ? ` ${ending}` : ''}${tucked ? ' tucked' : ''}`}>
             <header className="view-head">
               <div className="view-title">
                 <h1 title={wf.title}>{wf.title}</h1>
@@ -796,17 +810,20 @@ export function WorkflowView({
                 </div>
               </div>
               <div className="view-actions">
-                {/* While its run goes, Run now becomes its Stop (the card under it has none). Both
-                    labels sit in the button, one hidden, so it keeps Run now's width. */}
+                {/* While its run goes, Run now becomes its Stop (the card under it has none); while
+                    the card holds its colour as the run ends (green, passed; yellow, stopped for
+                    review), a greyed-out Ending, until it closes. All three labels sit in the
+                    button, the others hidden, so it keeps Run now's width. */}
                 {wf.script && (
                   <button
                     type="button"
-                    className={`run-stop${runningNow ? ' secondary stop' : ''}`}
+                    className={`run-stop${runningNow ? ' secondary stop' : finishing ? ' secondary' : ''}`}
                     onClick={runningNow ? stop : run}
-                    disabled={busy && !runningNow}
+                    disabled={(busy && !runningNow) || finishing}
                   >
-                    <span className={runningNow ? 'off' : undefined}>Run now</span>
+                    <span className={runningNow || finishing ? 'off' : undefined}>Run now</span>
                     <span className={runningNow ? undefined : 'off'}>Stop</span>
+                    <span className={finishing ? undefined : 'off'}>Ending</span>
                   </button>
                 )}
               </div>
@@ -834,6 +851,11 @@ export function WorkflowView({
           {/* One underline, sliding to whichever tab is chosen. */}
           <span className="wf-tab-line" aria-hidden="true" style={{ '--tab': tab, '--tabs': WF_TABS.length } as CSSProperties} />
         </div>
+        {/* The window drags by this strip along the bar's top edge only (Shell.css .wf-bar-drag).
+            Last in the bar: Electron reads drag areas in document order, a later no-drag one
+            (the bar's contents, which reach up under the strip) cutting out an earlier drag one,
+            so first it would be cut away entirely. */}
+        <div className="wf-bar-drag" aria-hidden="true" />
       </section>
     </div>
   )
@@ -845,18 +867,24 @@ export function WorkflowView({
 
         {error && <p className="request-error">{error}</p>}
 
-        {panel}
+        {/* While building there are no tabs: what it's doing sits here. Once built, it's on the
+            Overview tab (below). */}
+        {wf.status === 'building' && panel}
 
-        {/* What's running stays above whichever tab is open; the tab's own content under it. */}
         {wf.status !== 'building' && (
           <div className="wf-tab-panel" id="wf-tab-panel" role="tabpanel" aria-labelledby={`wf-tab-${tab}`}>
             {tab === 0 && (
-              <section className="card">
-                <div className="card-head">
-                  <h2>Prompt</h2>
-                </div>
-                <p className="muted goal">“{wf.goal}”</p>
-              </section>
+              <>
+                {/* The run's activity, and anything it needs from you (an approval, or why it
+                    stopped), only here, above the prompt. */}
+                {panel}
+                <section className="card">
+                  <div className="card-head">
+                    <h2>Prompt</h2>
+                  </div>
+                  <p className="muted goal">“{wf.goal}”</p>
+                </section>
+              </>
             )}
 
             {tab === 1 && (

@@ -244,9 +244,22 @@ export function Popup({ open, label, title, onClose, children }: { open: boolean
 }
 
 /** The full log in a Popup: the same scroller as the build's full log, fading out at both ends. */
-export function ActivityPopup({ open, events, start, onClose }: { open: boolean; events: JobEvent[]; start: number; onClose: () => void }) {
+export function ActivityPopup({
+  open,
+  events,
+  start,
+  onClose,
+  title = 'Activity',
+}: {
+  open: boolean
+  events: JobEvent[]
+  start: number
+  onClose: () => void
+  /** What the log is of: "Activity" for the live one, a past run's name and time in Run history. */
+  title?: string
+}) {
   return (
-    <Popup open={open} label="Activity" title="Activity" onClose={onClose}>
+    <Popup open={open} label={title} title={title} onClose={onClose}>
       <StepHistory events={events} start={start} fromTop />
     </Popup>
   )

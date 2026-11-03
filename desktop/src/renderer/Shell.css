@@ -572,12 +572,29 @@ button.brand-button:hover:not(:disabled) {
 }
 /* While a run goes, the title is dimmed (the status and Stop beside it aren't); it comes back
    up as the run passes (.passed) or ends. */
-.wf-head.running:not(.passed) .view-head h1 {
+.wf-head.running:not(.passed):not(.review) .view-head h1 {
   color: rgba(247, 246, 244, 0.55); /* --text, dimmed */
 }
 .wf-bar .build-bar-inner {
   gap: 0; /* the run's card brings its own room (.wf-bar-run) */
   padding-bottom: 18px; /* with the tabs' own 14px above their labels, 32px under the header */
+}
+/* The workflow bar drags the window only by a strip along its top edge, as tall as the drag
+   strip on other pages (28px), not by the whole bar: its header moves (into the running
+   card and back), and macOS keeps the cut-outs for its buttons from where they were, so a
+   button that had moved could sit under a stale drag area and lose its clicks. Everything
+   in the bar sits below the strip (its padding starts 36px down). */
+.build-bar.wf-bar {
+  -webkit-app-region: no-drag;
+}
+.wf-bar-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  z-index: 2;
+  -webkit-app-region: drag;
 }
 /* While a run goes, the header becomes the top of its progress card (WorkflowView's
    .wf-head): the card's surface fades in and settles from a little larger onto the header
@@ -654,6 +671,14 @@ button.run-stop {
     transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.4s ease;
 }
+/* Stopped on purpose for review: the same, in yellow. */
+.wf-head.review::before {
+  border-color: rgba(255, 206, 27, 0.5);
+  transition:
+    opacity 0.3s ease-in,
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.4s ease;
+}
 .wf-head .view-actions {
   transform-origin: right center;
   transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
@@ -661,8 +686,10 @@ button.run-stop {
 .wf-head.running .view-actions {
   transform: scale(0.9);
 }
-/* The run passed: its card's blocks ease to green, the tiles gliding to rest as they stop. */
-.passed .build-bare .blocks span {
+/* The run passed (or stopped for review): its card's blocks ease to green (or yellow), the
+   tiles gliding to rest as they stop. */
+.passed .build-bare .blocks span,
+.review .build-bare .blocks span {
   transition: background-color 0.4s ease, box-shadow 0.4s ease, transform 0.4s ease, opacity 0.4s ease;
 }
 .wf-bar-run {
@@ -724,6 +751,7 @@ button.run-stop {
 .build-bare .hint-list li {
   flex: none;
   align-items: center;
+  animation: none; /* QueuedSteps slides each one in */
 }
 .build-bare .hint-text {
   overflow: hidden;
@@ -1248,6 +1276,8 @@ button.small-button {
   border-color: rgba(255, 70, 8, 0.35);
 }
 .build-passed { border-color: rgba(52, 211, 153, 0.3); }
+.build-review { border-color: rgba(255, 206, 27, 0.35); }
+.build-review .blocks span { background: #ffce1b; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 14px rgba(255, 206, 27, 0.35); }
 .build-failed,
 .build-error { border-color: rgba(248, 113, 113, 0.3); }
 .build-top {
@@ -2228,8 +2258,9 @@ body.pip-body {
 .pip:has(.pip-activity.open)::before {
   background-color: color-mix(in srgb, var(--bg) 90%, var(--accent));
 }
-.pip:has(.pip-activity.open.paused)::before {
-  background-color: color-mix(in srgb, var(--bg) 90%, #ffce1b); /* the waiting chip's yellow */
+.pip:has(.pip-activity.open.paused)::before,
+.pip:has(.pip-activity.open.review)::before {
+  background-color: color-mix(in srgb, var(--bg) 90%, #ffce1b); /* the waiting (and review) chip's yellow */
 }
 .pip:has(.pip-activity.open.finished)::before {
   background-color: color-mix(in srgb, var(--bg) 90%, #16a34a); /* the finished chip's green */
@@ -2242,13 +2273,18 @@ body.pip-body {
 .pip:has(.pip-activity.open) {
   --ring: var(--accent);
 }
-.pip:has(.pip-activity.open.paused) {
+.pip:has(.pip-activity.open.paused),
+.pip:has(.pip-activity.open.review) {
   --ring: #ffce1b;
 }
 /* Full, as a run passes: one solid ring, green at once, not when the green chip has taken
    over from the orange or yellow one. */
 .pip-ring.full {
   --ring: #16a34a;
+}
+/* Stopped for review: the same solid ring, in the review chip's yellow. */
+.pip-ring.full.review {
+  --ring: #ffce1b;
 }
 /* Drawn in, clockwise from the top (the ring is turned a quarter back), empty to whole. */
 .pip-ring.full circle.done {
@@ -2282,6 +2318,20 @@ body.pip-body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.3s ease;
+}
+/* The title takes the chip's colour while it shows, as the step ring does: orange while
+   Retronaut works in an app, yellow while it waits for you, green once the run passes. */
+.pip:has(.pip-activity.open) .pip-name {
+  color: var(--accent-text);
+}
+.pip:has(.pip-activity.open.paused) .pip-name,
+.pip:has(.pip-activity.open.review) .pip-name {
+  color: #ffce1b; /* the waiting (and review) chip's yellow */
+}
+.pip:has(.pip-activity.open.finished) .pip-name,
+.pip-name.done {
+  color: var(--ok-text);
 }
 .pip-count {
   flex: none;
@@ -2363,9 +2413,15 @@ body.pip-body {
     opacity 0.16s cubic-bezier(0.4, 0, 1, 1),
     transform 0.16s cubic-bezier(0.4, 0, 1, 1);
 }
-.pip-activity.paused .pip-chip {
+.pip-activity.paused .pip-chip,
+.pip-activity.review .pip-chip {
   --chip: #ffce1b;
   --chip-ink: #000; /* white is hard to read on the yellow */
+}
+/* The run stopped on purpose for review: yellow, still (nothing goes on), an exclamation
+   mark where Stop was. */
+.pip-activity.review .pip-chip::before {
+  content: none;
 }
 /* The run passed: green, and still (no sweep: nothing goes on). */
 .pip-activity.finished .pip-chip {

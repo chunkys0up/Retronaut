@@ -161,7 +161,9 @@ let rendererUrl = ''
 let display: Display | null = null
 let session = false
 let held = false // the live build is paused
-let finished = false // a run just passed: the picture-in-picture shows its green chip a moment, then leaves
+// A run just ended, passing or stopping on purpose for review: the picture-in-picture shows
+// its green or yellow chip a moment, then leaves.
+let ended: 'passed' | 'review' | null = null
 let finishTimer: ReturnType<typeof setTimeout> | null = null
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 let pipGlide: ReturnType<typeof setInterval> | null = null
@@ -174,7 +176,8 @@ const FRAME_ON_SCREEN_MS = 450
 // animation (0.86s) lands, then "Starting the agent…" blurs in (StepFeed's START_MS, 1.5s,
 // after the page settles, over 0.55s); they start just after.
 const BUILD_ENTRY_DELAY_MS = 2900
-// How long the picture-in-picture stays once a run passes: its green chip opens (the card
+// How long the picture-in-picture stays once a run passes (or stops for review): its green (or
+// yellow) chip opens (the card
 // growing down, then the chip, about 0.6s), stays a moment to be read, then the card leaves with it.
 const FINISHED_MS = 2200
 
@@ -322,7 +325,7 @@ function cornerRadii(d: Display): { top: number; bottom: number } {
 /** What the picture-in-picture's activity chip shows: what Retronaut is doing in an app now. */
 function sendActivity(win: BrowserWindow): void {
   const { active, app, paused, action } = ui.current()
-  const payload = JSON.stringify({ active, app, paused, action, finished })
+  const payload = JSON.stringify({ active, app, paused, action, finished: ended === 'passed', review: ended === 'review' })
   const send = () => void win.webContents.executeJavaScript(`window.pipActivity && window.pipActivity(${payload})`).catch(() => {})
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
   else send()
@@ -356,7 +359,7 @@ function render(): void {
   }
   const p = pipWindow()
   if (session && (!p.isVisible() || pipLeaving)) glidePip(true)
-  if (!session && !finished && p.isVisible() && !pipLeaving) glidePip(false)
+  if (!session && !ended && p.isVisible() && !pipLeaving) glidePip(false)
   // After the glide, so a card told to leave hears that first and keeps its chip as it was
   // (Pip's held): told the chip had closed first, it would snap shut as the card set off
   // (its transitions are off while it leaves), the card jumping shorter.
@@ -403,23 +406,25 @@ export function installOverlay(url: string): void {
     const showing = lastLive
     if (live) lastLive = live.id
     if (now === session && pausedNow === held) return
-    // A run that ended passing: the picture-in-picture (and the display it's on) stays while
-    // its green chip shows. A new build or run cuts that short.
-    const ended = session && !now ? JOBS.get(showing ?? '') : undefined
+    // A run that ended passing, or stopping on purpose for review: the picture-in-picture
+    // (and the display it's on) stays while its green or yellow chip shows. A new build or
+    // run cuts that short.
+    const job = session && !now ? JOBS.get(showing ?? '') : undefined
     if (finishTimer) clearTimeout(finishTimer)
     finishTimer = null
-    finished = ended?.kind === 'run' && ended.status === 'passed'
-    if (finished) {
+    ended =
+      job?.kind !== 'run' ? null : job.status === 'passed' ? 'passed' : job.status === 'failed' && job.result?.review === true ? 'review' : null
+    if (ended) {
       finishTimer = setTimeout(() => {
         finishTimer = null
-        finished = false
+        ended = null
         if (!session) display = null
         render()
       }, FINISHED_MS)
     }
     session = now
     held = pausedNow
-    if (!session && !finished) display = null
+    if (!session && !ended) display = null
     render()
   }
   onJobsChange(syncJobs)

@@ -771,6 +771,8 @@ async function build(wfId: string, job: Job): Promise<void> {
     })
     job.finish('error', { error })
     workflows.recordRun(job, { error })
+    // A crash needs the person as much as a failure does; stopping it was their own doing.
+    if (!job.stopped) needAttention(job, 'build crashed')
   } finally {
     await agent.close()
     rmSync(workspace, { recursive: true, force: true })
@@ -832,6 +834,8 @@ async function runAndHeal(wfId: string, job: Job): Promise<void> {
     if (!job.stopped) job.emit('error', 'Run crashed', error)
     job.finish('error', { error })
     workflows.recordRun(job, { error })
+    // A crash needs the person as much as a failure does; stopping it was their own doing.
+    if (!job.stopped) needAttention(job, 'run crashed')
   }
 }
 

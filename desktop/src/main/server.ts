@@ -289,9 +289,12 @@ route('GET', '/live', () => {
   const j = jobs.liveJob()
   if (!j) return null
   const wf = workflows.get(j.workflowId)
-  // A run's step count isn't known up front; the last good run's is the best guess.
+  // A run's step count isn't known up front; the last good run's is the best guess. With no
+  // good run among those kept (a workflow that's only been failing lately), the most steps any
+  // run got to: low, maybe, but the ring grows past it as the run goes on (Pip's segments).
   const lastGood = wf?.runs.find((r) => r.kind === 'run' && r.status === 'passed' && r.steps)
-  return { ...j.snapshot(), title: wf?.title ?? '', expected_steps: lastGood?.steps ?? null }
+  const furthest = Math.max(0, ...(wf?.runs ?? []).filter((r) => r.kind === 'run').map((r) => r.steps ?? 0))
+  return { ...j.snapshot(), title: wf?.title ?? '', expected_steps: lastGood?.steps ?? (furthest || null) }
 })
 
 route('GET', '/jobs/:id', (req) => job(req.params.id).snapshot(int(req.query, 'after', 0, 0)))

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Pip } from './Pip'
 
-type Activity = { active: boolean; app: string; paused: boolean; action: string; finished: boolean }
+type Activity = { active: boolean; app: string; paused: boolean; action: string; finished: boolean; review: boolean }
 
 const STEPS = [
   'Opening GnuCash',
@@ -59,7 +59,7 @@ if (window.location.hash === '#pip-test')
 const send = (a: Activity) => (window as Window & { pipActivity?: (a: Activity) => void }).pipActivity?.(a)
 
 export function PipTester() {
-  const [state, setState] = useState<'off' | 'working' | 'using' | 'waiting' | 'finished'>('off')
+  const [state, setState] = useState<'off' | 'working' | 'using' | 'waiting' | 'finished' | 'review'>('off')
   const [cycling, setCycling] = useState(false)
   const [growing, setGrowing] = useState(true)
   const [shown, setShown] = useState(true)
@@ -68,11 +68,13 @@ export function PipTester() {
   useEffect(() => {
     const app = 'GnuCash'
     const finished = false
-    if (state === 'off') send({ active: false, app, paused: false, action: '', finished })
-    if (state === 'working') send({ active: true, app, paused: false, action: ACTIONS[actionAt.current % ACTIONS.length]!, finished })
-    if (state === 'using') send({ active: true, app, paused: false, action: '', finished })
-    if (state === 'waiting') send({ active: true, app, paused: true, action: ACTIONS[actionAt.current % ACTIONS.length]!, finished })
-    if (state === 'finished') send({ active: false, app, paused: false, action: '', finished: true })
+    const review = false
+    if (state === 'off') send({ active: false, app, paused: false, action: '', finished, review })
+    if (state === 'working') send({ active: true, app, paused: false, action: ACTIONS[actionAt.current % ACTIONS.length]!, finished, review })
+    if (state === 'using') send({ active: true, app, paused: false, action: '', finished, review })
+    if (state === 'waiting') send({ active: true, app, paused: true, action: ACTIONS[actionAt.current % ACTIONS.length]!, finished, review })
+    if (state === 'finished') send({ active: false, app, paused: false, action: '', finished: true, review })
+    if (state === 'review') send({ active: false, app, paused: false, action: '', finished, review: true })
   }, [state])
 
   // New steps keep arriving, so the steps panel scrolls as it would.
@@ -116,6 +118,7 @@ export function PipTester() {
         {button('Working (no action)', state === 'using' && !cycling, () => pick('using'))}
         {button('Waiting for you', state === 'waiting' && !cycling, () => pick('waiting'))}
         {button('Finished (run passed)', state === 'finished' && !cycling, () => pick('finished'))}
+        {button('Needs review (run stopped)', state === 'review' && !cycling, () => pick('review'))}
         {button('Cycle through them', cycling, () => setCycling((c) => !c))}
         <span style={{ opacity: 0.6, marginTop: 10 }}>Card</span>
         {button('Steps arriving', growing, () => setGrowing((g) => !g))}

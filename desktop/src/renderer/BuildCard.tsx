@@ -2,6 +2,10 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 
 import { live, type JobEvent, type JobSnapshot } from './api'
 import { BUILD_PHASES, activeSeconds, buildPhase, phaseDurations } from './phases'
+import { QueuedSteps, useStepQueue } from './QueuedSteps'
+
+/** Steps kept in the workflow bar's run card: more than fit, so the oldest leave under its top edge. */
+const BARE_KEEP = 8
 
 /**
  * Pausing a build: the current phase's sweep (a CSS animation on its ::after) eases to a stop
@@ -103,7 +107,7 @@ export function jobTitle(job: JobSnapshot): string {
     if (!running) return job.status === 'passed' ? 'Workflow built' : 'Build stopped'
     return job.requests.some((r) => r.status === 'pending') ? 'Waiting for you' : `${BUILD_PHASES[buildPhase(job)].label}…`
   }
-  if (!running) return job.status === 'passed' ? 'Run finished' : 'Run failed'
+  if (!running) return job.status === 'passed' ? 'Run finished' : job.result?.review === true ? 'Needs your review' : 'Run failed'
   return job.events.some((e) => e.label === 'Healing') ? 'Healing…' : 'Running…'
 }
 
@@ -176,11 +180,16 @@ export function BuildCard({
   const phase = job.kind === 'build' ? buildPhase(job) : -1
   const shot = [...job.events].reverse().find((e) => e.image)
   const recent = recentSteps(job, 4)
+  // In the workflow bar's run card, its steps let in one after another (QueuedSteps).
+  const queued = recentSteps(job, BARE_KEEP * 3)
+  const upTo = useStepQueue(job.job_id, queued, BARE_KEEP)
   const latest = job.events[job.events.length - 1]
   const elapsed = activeSeconds(job, job.started, running ? now : (job.finished ?? now)) // time paused or waiting on the user doesn't count
   const title = jobTitle(job)
 
-  const state = `${running ? 'build-live' : `build-${job.status}`}${running && job.paused ? ' build-paused' : ''}`
+  // A run that stopped on purpose for review is "failed" but not a failure: yellow, not red.
+  const ended = job.result?.review === true ? 'review' : job.status
+  const state = `${running ? 'build-live' : `build-${ended}`}${running && job.paused ? ' build-paused' : ''}`
   const took = job.kind === 'build' ? phaseDurations(job, now) : []
   const phaseList = useRef<HTMLOListElement>(null)
   usePausedSweep(phaseList, running && Boolean(job.paused))
@@ -240,14 +249,27 @@ export function BuildCard({
               <figcaption className="small muted">{shot.label}</figcaption>
             </figure>
           )}
-          <ul className="hint-list" aria-label="Recent actions">
-            {recent.map((e) => (
-              <li key={e.i}>
-                <span className={`dot dot-${e.kind}`} aria-hidden="true" />
-                <span className="hint-text">{friendly(e, job.events)}</span>
-              </li>
-            ))}
-          </ul>
+{bare ? (
+            // In the workflow bar's run card, steps come in one after another, sliding up, as
+            // the picture-in-picture's do (a poll can bring a batch).
+            <QueuedSteps
+              className="hint-list"
+              jobId={job.job_id}
+              steps={queued}
+              upTo={upTo}
+              keep={BARE_KEEP}
+              describe={(e) => friendly(e, job.events)}
+            />
+          ) : (
+                      <ul className="hint-list" aria-label="Recent actions">
+              {recent.map((e) => (
+                <li key={e.i}>
+                  <span className={`dot dot-${e.kind}`} aria-hidden="true" />
+                  <span className="hint-text">{friendly(e, job.events)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </>

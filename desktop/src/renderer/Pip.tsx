@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { friendly, jobTitle, recentSteps, stepProgress } from './BuildCard'
-import { api, live, pipChipHover, stopLive, type JobEvent, type JobSnapshot } from './api'
+import { api, live, pipChipHover, stopLive, type JobSnapshot } from './api'
 import { DROP_MS, DROP_SPRING, LEAVE_EASE, LEAVE_MS } from '../shared/motion'
 import { prefersReducedMotion } from './Flight'
 import { BUILD_PHASES, buildPhase } from './phases'
+import { QueuedSteps, useStepQueue } from './QueuedSteps'
 
 const POLL_MS = 800
 
@@ -27,14 +28,14 @@ function segments(job: LiveJob): { count: number; at: number } | null {
 
 /**
  * A ring of `count` segments around the top-right corner: done ones lit, the current one
- * glowing. `full` (a run passed): one solid ring instead, no segments, drawn in round from
- * the top over a plain track (Shell.css).
+ * glowing. `full` (a run passed, or stopped for review): one solid ring instead, no
+ * segments, drawn in round from the top over a plain track, green or yellow (Shell.css).
  */
-function ProgressRing({ count, at, paused, full }: { count: number; at: number; paused: boolean; full: boolean }) {
+function ProgressRing({ count, at, paused, full }: { count: number; at: number; paused: boolean; full: 'passed' | 'review' | null }) {
   const gap = 5 // of the ring's 100, between segments
   const length = 100 / count - gap
   return (
-    <svg className={`pip-ring${full ? ' full' : ''}`} width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+    <svg className={`pip-ring${full ? ` full ${full}` : ''}`} width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
       {full ? (
         <>
           <circle cx="10" cy="10" r="8" />
@@ -58,83 +59,8 @@ function ProgressRing({ count, at, paused, full }: { count: number; at: number; 
   )
 }
 
-/**
- * The last few steps, newest at the bottom: a new one slides in from below and pushes the
- * rest up, the oldest fading under the panel's top edge (more are kept than fit, so they
- * leave there rather than vanishing). A whole new set (the first, or a new build's or run's)
- * fades in quickly where it is. Steps that come in together (a poll can bring a batch) are
- * let in one after another, STEP_GAP_MS apart, so the list climbs through them rather than
- * jumping; each move adds to the one under way, so they run on smoothly into each other.
- */
-const KEEP = 8 // shown: more than fit, so the oldest leave under the top edge
-const STEP_GAP_MS = 160
-function Steps({ jobId, steps, events }: { jobId: string; steps: JobEvent[]; events: JobEvent[] }) {
-  const list = useRef<HTMLUListElement>(null)
-  const tops = useRef(new Map<string, number>())
-  const last = steps[steps.length - 1]?.i ?? -1
-  // The newest step let in so far; a new build or run starts with all of its steps in.
-  const [shown, setShown] = useState({ jobId, upTo: last })
-  let upTo = shown.jobId === jobId ? shown.upTo : last
-  // Never more than a screenful behind: past that, skip to the last KEEP waiting.
-  const waiting = steps.filter((e) => e.i > upTo)
-  if (prefersReducedMotion()) upTo = last
-  else if (waiting.length > KEEP) upTo = waiting[waiting.length - KEEP - 1]!.i
-  if (shown.jobId !== jobId || shown.upTo !== upTo) setShown({ jobId, upTo })
-  const next = waiting.find((e) => e.i > upTo)?.i
-  useEffect(() => {
-    if (next === undefined) return
-    const timer = setTimeout(() => setShown({ jobId, upTo: next }), STEP_GAP_MS)
-    return () => clearTimeout(timer)
-  }, [jobId, next])
-  const visible = steps.filter((e) => e.i <= upTo).slice(-KEEP)
-
-  useLayoutEffect(() => {
-    const el = list.current
-    if (!el) return
-    const motion = !prefersReducedMotion()
-    const items = Array.from(el.children) as HTMLElement[]
-    const fresh = !items.some((li) => tops.current.has(li.dataset.key!)) // nothing carried over
-    const next = new Map<string, number>()
-    for (const li of items) {
-      const key = li.dataset.key!
-      const top = li.offsetTop
-      next.set(key, top)
-      if (!motion) continue
-      if (fresh) {
-        li.animate([{ opacity: 0 }, { opacity: 1 }], {
-          duration: 250,
-          easing: 'ease-out',
-        })
-        continue
-      }
-      const before = tops.current.get(key)
-      // Added to any move already under way: from where it is on screen, not where it was laid out.
-      const move = {
-        duration: 450,
-        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-        composite: 'add',
-      } as const
-      if (before === undefined) {
-        li.animate([{ transform: `translateY(${li.offsetHeight + 6}px)` }, { transform: 'translateY(0)' }], move)
-        li.animate([{ opacity: 0 }, { opacity: 1 }], {
-          duration: 300,
-          easing: 'ease-out',
-        })
-      } else if (before !== top) li.animate([{ transform: `translateY(${before - top}px)` }, { transform: 'translateY(0)' }], move)
-    }
-    tops.current = next
-  })
-  return (
-    <ul className="pip-steps" aria-label="Recent steps" ref={list}>
-      {visible.map((e) => (
-        <li key={`${jobId}:${e.i}`} data-key={`${jobId}:${e.i}`}>
-          <span className={`dot dot-${e.kind}`} aria-hidden="true" />
-          <span className="hint-text">{friendly(e, events)}</span>
-        </li>
-      ))}
-    </ul>
-  )
-}
+/** Steps kept in the list: more than fit, so the oldest leave under the top edge. */
+const KEEP = 8
 
 /** The hole the pointer opens in the card: its radius, its soft edge starting about halfway in. */
 const HOLE_R = 100
@@ -151,10 +77,12 @@ type Activity = {
   action: string
   /** A run just passed: the green chip, the card leaving with it a moment later. */
   finished: boolean
+  /** A run just stopped on purpose, for the person to decide: the yellow review chip, the same way. */
+  review: boolean
 }
 
-/** Which chip: working (orange), waiting for you (yellow), or the run passed (green). */
-type ChipFace = 'work' | 'wait' | 'done'
+/** Which chip: working (orange), waiting for you (yellow), the run passed (green), or it needs review (yellow). */
+type ChipFace = 'work' | 'wait' | 'done' | 'review'
 
 /**
  * The activity chip, under the steps and outside their panel, as the title row sits above
@@ -163,15 +91,16 @@ type ChipFace = 'work' | 'wait' | 'done'
  * growing down to hold it, and closes after, keeping its last words while it shrinks away.
  * The pointer over it doesn't fade the card, so Stop can be reached and clicked.
  * When a run passes it opens (or hands over) once more, green, saying so, a check mark in
- * place of Stop, and stays as the card leaves.
+ * place of Stop, and stays as the card leaves; when a run stops on purpose for review, the
+ * same, yellow, saying it needs your review, an exclamation mark in place of Stop.
  */
 function ActivityChip({ activity }: { activity: Activity }) {
   // The last thing it said, kept while it closes.
   const [last, setLast] = useState(activity)
-  const open = activity.active || activity.finished
+  const open = activity.active || activity.finished || activity.review
   if (open && activity !== last) setLast(activity)
-  const { app, paused, action, finished } = open ? activity : last
-  const kind: ChipFace = finished ? 'done' : paused ? 'wait' : 'work'
+  const { app, paused, action, finished, review } = open ? activity : last
+  const kind: ChipFace = finished ? 'done' : review ? 'review' : paused ? 'wait' : 'work'
   // The row opens to the chip's measured height (CSS can't animate to `auto`), kept current
   // as the chip's text changes, so the card always grows exactly enough to hold it.
   const row = useRef<HTMLDivElement>(null)
@@ -250,18 +179,19 @@ function ActivityChip({ activity }: { activity: Activity }) {
   }, [arrivals])
   const waiting = face === 'wait'
   const done = face === 'done'
+  const reviewing = face === 'review'
 
   return (
     <div
       ref={row}
-      className={`pip-activity${open ? ' open' : ''}${waiting ? ' paused' : ''}${done ? ' finished' : ''}`}
+      className={`pip-activity${open ? ' open' : ''}${waiting ? ' paused' : ''}${done ? ' finished' : ''}${reviewing ? ' review' : ''}`}
       aria-hidden={!open}
     >
       <div className="pip-activity-inner" ref={inner}>
         <div className="pip-chip" ref={chip} role="status" onMouseEnter={() => pipChipHover(true)} onMouseLeave={() => pipChipHover(false)}>
           <span className="pip-chip-text">
             {/* What's asked of you on top, what it's doing (or how to let it go on) under it. */}
-            <b className="pip-chip-main">{done ? 'Workflow finished' : waiting ? 'Waiting for you' : 'Hands off'}</b>
+            <b className="pip-chip-main">{done ? 'Workflow finished' : reviewing ? 'Needs your review' : waiting ? 'Waiting for you' : 'Hands off'}</b>
             {done ? (
               // Unseen, the two lines the other chips have, so this one is as tall as they
               // are, its one line centred over them.
@@ -271,7 +201,13 @@ function ActivityChip({ activity }: { activity: Activity }) {
               </span>
             ) : (
               <span className="pip-chip-sub">
-                {waiting ? 'Let go of the mouse and keyboard' : action ? `${app || 'App'}: ${action}` : `Using ${app || 'an app'}`}
+                {reviewing
+                  ? 'This workflow stopped on purpose.'
+                  : waiting
+                    ? 'Let go of the mouse and keyboard'
+                    : action
+                      ? `${app || 'App'}: ${action}`
+                      : `Using ${app || 'an app'}`}
               </span>
             )}
           </span>
@@ -279,6 +215,13 @@ function ActivityChip({ activity }: { activity: Activity }) {
             <span className="pip-chip-check" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="16" height="16">
                 <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          ) : reviewing ? (
+            <span className="pip-chip-check" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="16" height="16">
+                <path d="M8 3.5v5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="8" cy="12.25" r="1.15" fill="currentColor" />
               </svg>
             </span>
           ) : (
@@ -341,6 +284,7 @@ export function Pip() {
     paused: false,
     action: '',
     finished: false,
+    review: false,
   })
 
   useEffect(() => {
@@ -431,10 +375,16 @@ export function Pip() {
     return () => out.cancel() // a new build or run: it arrives again
   }, [shown, leaving])
 
+  // Steps are let in one after another (a poll can bring a batch), and what counts them (the
+  // ring, "Step 4/8") goes with the list, a step at a time, rather than jumping ahead of it.
+  const queued = job ? recentSteps(job, KEEP * 3) : []
+  const upTo = useStepQueue(job?.job_id ?? '', queued, KEEP)
+
   if (!job) return null
-  const ring = segments(job)
+  const seen = { ...job, events: job.events.filter((e) => e.i <= upTo) }
+  const ring = segments(seen)
   // A run that passed reads as every step done, whatever step it last reported.
-  const reported = stepProgress(job, job.expected_steps)
+  const reported = stepProgress(seen, job.expected_steps)
   const total = ring?.count ?? Number(/^Step (\d+)/.exec(reported ?? '')?.[1] ?? 0)
   const progress = held.current.finished && total ? `Step ${total}/${total}` : reported
   // The window ignores the mouse except over the activity chip, which takes clicks (its Stop).
@@ -443,19 +393,31 @@ export function Pip() {
       <div className={`pip${leaving ? ' leaving' : ''}`} ref={card}>
         <div className="pip-main">
           <div className="pip-title">
-            <span className="pip-name">{jobTitle(job)}</span>
+            {/* With the green chip (a run passed), just "Done", in green; with the yellow review
+                chip, "Needs review", in yellow (Shell.css). */}
+            <span className={`pip-name${held.current.finished ? ' done' : ''}`}>
+              {held.current.finished ? 'Done' : held.current.review ? 'Needs review' : jobTitle(job)}
+            </span>
             {progress && <span className="pip-count">{progress}</span>}
             {ring && (
               <ProgressRing
                 count={ring.count}
                 at={ring.at}
                 paused={Boolean(job.paused) || !live(job.status)}
-                full={held.current.finished} // with the green chip, solid and green (Shell.css)
+                // With the green chip, solid and green; with the yellow review chip, solid and yellow (Shell.css).
+                full={held.current.finished ? 'passed' : held.current.review ? 'review' : null}
               />
             )}
           </div>
           <div className="pip-panel">
-            <Steps jobId={job.job_id} steps={recentSteps(job, KEEP * 3)} events={job.events} />
+            <QueuedSteps
+              className="pip-steps"
+              jobId={job.job_id}
+              steps={queued}
+              upTo={upTo}
+              keep={KEEP}
+              describe={(e) => friendly(e, job.events)}
+            />
           </div>
         </div>
         <ActivityChip activity={held.current} />
