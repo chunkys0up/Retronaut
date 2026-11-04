@@ -193,7 +193,6 @@ export function Dashboard({
       <header className="view-head">
         <div className="view-title">
           <h1>Home</h1>
-          <p className="muted">Run a workflow from here, or open it for its details and history.</p>
         </div>
         <div className="view-actions">
           <button type="button" onClick={onNew}>
