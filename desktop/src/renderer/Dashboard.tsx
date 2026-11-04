@@ -92,7 +92,31 @@ function WorkflowCard({
   )
 }
 
-/** The Home tab: every workflow as a wide card, the most recently touched first. */
+type Sort = 'run' | 'created'
+const SORT_KEY = 'home-sort'
+const SORTS: { value: Sort; label: string }[] = [
+  { value: 'run', label: 'Last run' },
+  { value: 'created', label: 'Created' },
+]
+
+function loadSort(): Sort {
+  try {
+    return localStorage.getItem(SORT_KEY) === 'created' ? 'created' : 'run'
+  } catch {
+    return 'run'
+  }
+}
+
+function SearchIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  )
+}
+
+/** The Home tab: every workflow as a wide card, searchable, by last run or by creation. */
 export function Dashboard({
   workflows,
   onOpen,
@@ -104,7 +128,22 @@ export function Dashboard({
   onNew: () => void
   onChanged: () => void
 }) {
-  const sorted = [...workflows].sort((a, b) => b.updated - a.updated)
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<Sort>(loadSort)
+  function pickSort(next: Sort) {
+    setSort(next)
+    try {
+      localStorage.setItem(SORT_KEY, next)
+    } catch {
+      // storage can be unavailable; the choice just isn't remembered
+    }
+  }
+  // Matching the search in its name or prompt, then newest first by the chosen date;
+  // by last run, ones that never ran come after, newest built first.
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const sorted = workflows
+    .filter((w) => words.every((word) => `${w.title} ${w.goal}`.toLowerCase().includes(word)))
+    .sort((a, b) => (sort === 'run' ? (lastRun(b)?.started ?? 0) - (lastRun(a)?.started ?? 0) : 0) || b.created - a.created)
   // One run at a time from here: the card running it, and once over, how it went.
   const [running, setRunning] = useState<{ id: string; job: JobSnapshot } | null>(null)
   const [ended, setEnded] = useState<{ id: string; ok: boolean } | null>(null)
@@ -162,7 +201,41 @@ export function Dashboard({
           </button>
         </div>
       </header>
-      {sorted.length === 0 ? (
+      {workflows.length > 0 && (
+        <div className="dash-tools">
+          <label className="dash-search">
+            <SearchIcon />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+              placeholder="Search workflows"
+              aria-label="Search workflows"
+            />
+          </label>
+          <div className="dash-sort" role="radiogroup" aria-label="Sort by">
+            <span className="muted small">Sort by</span>
+            <div className="seg">
+              {SORTS.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={sort === s.value}
+                  className={sort === s.value ? 'on' : undefined}
+                  onClick={() => pickSort(s.value)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {workflows.length > 0 && sorted.length === 0 ? (
+        <p className="muted dash-none">No workflows match “{query.trim()}”.</p>
+      ) : sorted.length === 0 ? (
         <div className="dash-empty">
           <p className="muted">Nothing automated yet.</p>
           <button type="button" className="secondary" onClick={onNew}>
