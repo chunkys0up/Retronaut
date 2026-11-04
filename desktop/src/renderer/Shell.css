@@ -2823,27 +2823,19 @@ body.pip-body {
 .wf-card-text {
   gap: 8px;
 }
-/* Open in the top-right corner, Run stacked under it at the bottom. */
+/* Run and Open stacked in the top-right corner, the same width. */
 .wf-card-actions {
   flex: none;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  margin: -6px -6px 0 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 112px;
 }
 .wf-card-actions button {
   gap: 6px;
-}
-button.wf-card-open {
-  height: 30px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-button.wf-card-run {
-  min-width: 104px;
-  margin-right: 6px;
+  width: 100%;
 }
 .dash-empty {
   display: flex;
@@ -2860,8 +2852,8 @@ button.wf-card-run {
     align-items: stretch;
   }
   .wf-card-actions {
-    flex-direction: row-reverse;
-    margin: 0;
+    flex-direction: row;
+    width: auto;
   }
   .wf-card-actions button {
     flex: 1;

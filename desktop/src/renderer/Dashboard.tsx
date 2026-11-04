@@ -69,18 +69,18 @@ function WorkflowCard({
         {error && <p className="request-error small">{error}</p>}
       </div>
       <div className="wf-card-actions">
-        <button type="button" className="secondary wf-card-open" onClick={onOpen} title="Open in full">
-          Open
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M15 3h6v6M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" />
-          </svg>
-        </button>
         {wf.script && (
           <button type="button" className="wf-card-run" onClick={onRun} disabled={running || state === 'idle' || wf.status === 'building'}>
             {running && <span className="spinner" aria-hidden="true" />}
             {running ? 'Running…' : 'Run'}
           </button>
         )}
+        <button type="button" className="secondary wf-card-open" onClick={onOpen} title="Open in full">
+          Open
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 3h6v6M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" />
+          </svg>
+        </button>
       </div>
     </article>
   )
