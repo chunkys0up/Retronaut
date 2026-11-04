@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { api, live, type JobSnapshot, type Workflow } from './api'
 
@@ -116,6 +116,120 @@ function SearchIcon() {
   )
 }
 
+/**
+ * The sort dropdown, drawn by the app rather than macOS. Its menu hangs from the button's
+ * right edge and opens leftwards, so it never runs off the window's right side.
+ */
+function SortMenu({ value, onChange }: { value: Sort; onChange: (next: Sort) => void }) {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0) // the highlighted option, for the keyboard
+  const root = useRef<HTMLDivElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const list = useRef<HTMLUListElement>(null)
+  const current = SORTS.find((s) => s.value === value) ?? SORTS[0]
+
+  // A click anywhere else closes it.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  useEffect(() => {
+    if (open) list.current?.focus()
+  }, [open])
+
+  function show() {
+    setActive(Math.max(0, SORTS.indexOf(current)))
+    setOpen(true)
+  }
+
+  function close() {
+    setOpen(false)
+    button.current?.focus()
+  }
+
+  function pick(next: Sort) {
+    onChange(next)
+    close()
+  }
+
+  function onButtonKey(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      show()
+    }
+  }
+
+  function onListKey(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      setActive((i) => (i + step + SORTS.length) % SORTS.length)
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      pick(SORTS[active].value)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      close()
+    } else if (e.key === 'Tab') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className="dash-sort" ref={root}>
+      <button
+        ref={button}
+        type="button"
+        className={`sort-button${open ? ' open' : ''}`}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={onButtonKey}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Sort by ${current.label}`}
+        title="Sort by"
+      >
+        {current.label}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <ul
+          ref={list}
+          className="sort-menu"
+          role="listbox"
+          tabIndex={-1}
+          aria-label="Sort by"
+          aria-activedescendant={`sort-${SORTS[active].value}`}
+          onKeyDown={onListKey}
+        >
+          {SORTS.map((s, i) => (
+            <li
+              key={s.value}
+              id={`sort-${s.value}`}
+              role="option"
+              aria-selected={s.value === value}
+              className={i === active ? 'active' : undefined}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(s.value)}
+            >
+              <span>{s.label}</span>
+              {s.value === value && (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12.5 10 17 19 7" />
+                </svg>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 /** The Home tab: every workflow as a wide card, searchable, by last run or by creation. */
 export function Dashboard({
   workflows,
@@ -213,15 +327,7 @@ export function Dashboard({
               aria-label="Search workflows"
             />
           </label>
-          <label className="dash-sort">
-            <select value={sort} onChange={(e) => pickSort(e.target.value as Sort)} aria-label="Sort by" title="Sort by">
-              {SORTS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SortMenu value={sort} onChange={pickSort} />
         </div>
       )}
       {workflows.length > 0 && sorted.length === 0 ? (
