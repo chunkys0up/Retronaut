@@ -214,8 +214,7 @@ export function Dashboard({
             />
           </label>
           <label className="dash-sort">
-            <span className="muted small">Sort by</span>
-            <select value={sort} onChange={(e) => pickSort(e.target.value as Sort)}>
+            <select value={sort} onChange={(e) => pickSort(e.target.value as Sort)} aria-label="Sort by" title="Sort by">
               {SORTS.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
