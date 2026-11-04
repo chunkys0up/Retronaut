@@ -60,10 +60,30 @@ function Check({ ok, label, detail, fix }: { ok: boolean | null; label: string; 
 }
 
 // Coming in from Home's New workflow button: the send animation (Flight.tsx) run the other
-// way, button into composer, with the same glide, timings and fades.
-const LABEL = '+ New workflow'
-const LABEL_PX = 12 // the button's text; the composer's is 15px, and the label scales between
-const BUTTON_RADIUS = 8
+// way, with the same glide, timings and fades. The orange button glides into the composer's
+// Build workflow button, and the white composer grows out from under it, from its corner.
+const FROM_LABEL = '+ New workflow'
+const TO_LABEL = 'Build workflow'
+const FROM_PX = 12.5 // the New workflow button's text; Build workflow's is 12px
+const BUTTON_RADIUS = 4 // both buttons' corners
+const GROW_DELAY = 160 // the composer starts growing once the button is most of the way there
+const STEPS = 32
+
+/**
+ * A box scaled unevenly from (sx, sy) to full size along the glide, its corners going from
+ * r0 to r1 and set against the scale so they look round all the way (as Flight.tsx does).
+ */
+function corners(sx: number, sy: number, r0: number, r1: number): Keyframe[] {
+  return Array.from({ length: STEPS + 1 }, (_, i) => {
+    const p = glideEase(i / STEPS)
+    const r = r0 + (r1 - r0) * p
+    return { offset: i / STEPS, borderRadius: `${r / (sx + (1 - sx) * p)}px / ${r / (sy + (1 - sy) * p)}px` }
+  })
+}
+
+/** The transform that puts a box laid out at `to` back where `from` was. */
+const flip = (from: Box, to: DOMRect) =>
+  `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`
 
 export function Home({
   onStart,
@@ -107,74 +127,73 @@ export function Home({
 
   useLayoutEffect(fit, [fit, prompt, error])
 
-  // The button's glide, built as the send animation is (Flight.tsx), in two layers moved by
-  // transform alone so it runs on the compositor with sub-pixel steps:
-  // - the box: laid out as the composer, scaled down to the button and glided up to full
-  //   size, orange to the composer's white, its corners kept round against the scale;
-  // - the label: laid out at the composer's text, at its 15px, scaled down to the button's
-  //   12px and glided across with the box, dimming to the placeholder's grey and fading as
-  //   it lands, where the composer's own contents rise in (as the build bar's do).
-  const ghost = useRef<HTMLDivElement>(null)
-  const label = useRef<HTMLDivElement>(null)
+  // The button's glide, built as the send animation is (Flight.tsx): layers moved by
+  // transform alone, so it runs on the compositor with sub-pixel steps.
+  // - the button: laid out as Build workflow, scaled back to the New workflow button and
+  //   glided across on the send's curve, landing exactly on Build workflow;
+  // - its label: the two buttons' words stacked, crossfading as it goes, on the send's
+  //   450ms schedule for what a flying box carries in and out;
+  // - the composer: laid out as itself and started as Build workflow's own box, so it grows
+  //   out from under the button, from its corner, once the button is most of the way there,
+  //   its hairline ring and shadow coming in as it grows.
+  const ghostBox = useRef<HTMLDivElement>(null)
+  const ghostButton = useRef<HTMLDivElement>(null)
+  const ghostLabel = useRef<HTMLDivElement>(null)
+  const submitButton = useRef<HTMLButtonElement>(null)
   const [landed, setLanded] = useState(from === null)
   useLayoutEffect(() => {
-    const shell = ghost.current
-    const words = label.current
+    const shell = ghostBox.current
+    const pill = ghostButton.current
+    const words = ghostLabel.current
     const card = form.current
-    const text = box.current
-    if (!from || !shell || !words || !card || !text) return
+    const build = submitButton.current
+    if (!from || !shell || !pill || !words || !card || !build) return
+    const place = (el: HTMLElement, r: DOMRect) =>
+      Object.assign(el.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
 
-    // The box: from the button's to the composer's, scaled unevenly.
+    // The button.
+    const button = build.getBoundingClientRect()
+    place(pill, button)
+    const bx = from.width / button.width
+    const by = from.height / button.height
+    const glide = pill.animate([{ transform: flip(from, button) }, { transform: 'none' }], GLIDE)
+    const pillCorners = pill.animate(corners(bx, by, BUTTON_RADIUS, BUTTON_RADIUS), { duration: GLIDE.duration, fill: 'both' })
+    // Build workflow sits disabled until there's a prompt, a little faded: so does the copy, by the end.
+    const settle = pill.animate([{ opacity: 1 }, { opacity: 0.85 }], { duration: 450, easing: 'ease-out', fill: 'both' })
+
+    // Its label: laid out on Build workflow, moved (not stretched) from the button's centre,
+    // and scaled from its 12.5px to 12px.
+    place(words, button)
+    const s = FROM_PX / 12
+    const dx = from.left + from.width / 2 - (button.left + button.width / 2)
+    const dy = from.top + from.height / 2 - (button.top + button.height / 2)
+    const carry = words.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${s})` }, { transform: 'none' }], GLIDE)
+    const [oldWords, newWords] = Array.from(words.children) as HTMLElement[]
+    const out = oldWords.animate([{ opacity: 1 }, { offset: 0.3, opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-out', fill: 'both' })
+    const into = newWords.animate([{ opacity: 0 }, { offset: 0.3, opacity: 0 }, { opacity: 1 }], { duration: 450, easing: 'ease-out', fill: 'both' })
+
+    // The composer, growing from Build workflow's box to its own, from the corner the button sits in.
     const target = card.getBoundingClientRect()
-    Object.assign(shell.style, { left: `${target.left}px`, top: `${target.top}px`, width: `${target.width}px`, height: `${target.height}px` })
-    const sx = from.width / target.width
-    const sy = from.height / target.height
-    const reshape = shell.animate(
-      [{ transform: `translate(${from.left - target.left}px, ${from.top - target.top}px) scale(${sx}, ${sy})` }, { transform: 'none' }],
-      GLIDE,
-    )
-    const lighten = shell.animate(
+    place(shell, target)
+    const cx = button.width / target.width
+    const cy = button.height / target.height
+    const grow = shell.animate([{ transform: flip(button, target) }, { transform: 'none' }], { ...GLIDE, delay: GROW_DELAY })
+    const boxCorners = shell.animate(corners(cx, cy, BUTTON_RADIUS, RADIUS), { duration: GLIDE.duration, delay: GROW_DELAY, fill: 'both' })
+    const appear = shell.animate(
       [
-        { backgroundColor: 'rgb(255, 70, 8)', boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0), 0 18px 50px rgba(0, 0, 0, 0)' },
-        { offset: 0.5, backgroundColor: 'rgb(255, 196, 170)', boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 18px 50px rgba(0, 0, 0, 0.09)' },
-        { backgroundColor: 'rgb(255, 255, 255)', boxShadow: COMPOSER_SHADOW },
+        { opacity: 0, boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0), 0 18px 50px rgba(0, 0, 0, 0)' },
+        { offset: 0.3, opacity: 1 },
+        { opacity: 1, boxShadow: COMPOSER_SHADOW },
       ],
-      { duration: 450, easing: 'ease-out', fill: 'both' },
-    )
-    // The corners go from the button's 8px to the composer's 12px along the glide's own
-    // curve, set against the uneven scale so they look round all the way.
-    const steps = 32
-    const round = shell.animate(
-      Array.from({ length: steps + 1 }, (_, i) => {
-        const p = glideEase(i / steps)
-        const r = BUTTON_RADIUS + (RADIUS - BUTTON_RADIUS) * p
-        return { offset: i / steps, borderRadius: `${r / (sx + (1 - sx) * p)}px / ${r / (sy + (1 - sy) * p)}px` }
-      }),
-      { duration: GLIDE.duration, fill: 'both' },
+      { duration: 450, delay: GROW_DELAY, easing: 'ease-out', fill: 'both' },
     )
 
-    // The label: laid out where the composer's text starts, and started back on the button,
-    // centred and scaled to its 12px.
-    const at = text.getBoundingClientRect()
-    Object.assign(words.style, { left: `${at.left}px`, top: `${at.top}px` })
-    const s = LABEL_PX / 15
-    const startLeft = from.left + (from.width - words.offsetWidth * s) / 2
-    const startTop = from.top + (from.height - words.offsetHeight * s) / 2
-    const glide = words.animate([{ transform: `translate(${startLeft - at.left}px, ${startTop - at.top}px) scale(${s})` }, { transform: 'none' }], GLIDE)
-    const dim = words.animate(
-      [{ color: 'rgb(255, 255, 255)' }, { offset: 0.45, color: 'rgba(36, 36, 36, 0.85)' }, { color: 'rgba(36, 36, 36, 0.5)' }],
-      { duration: 700, easing: 'ease-in-out', fill: 'both' },
-    )
-    // Not the placeholder's words, so it hands over: there until 30% of the way, then gone
-    // as the composer's own contents come in.
-    const fade = words.animate([{ opacity: 1 }, { offset: 0.3, opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-out', fill: 'both' })
-
-    Promise.all([glide.finished, reshape.finished]).then(() => {
+    Promise.all([glide.finished, grow.finished]).then(() => {
       setLanded(true)
-      text.focus()
+      box.current?.focus()
     }, () => {})
     return () => {
-      for (const a of [reshape, lighten, round, glide, dim, fade]) a.cancel()
+      for (const a of [glide, pillCorners, settle, carry, out, into, grow, boxCorners, appear]) a.cancel()
     }
     // Runs once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -289,7 +308,7 @@ export function Home({
             {error && <p className="request-error">{error}</p>}
             <div className="composer-foot">
               {prompt && <span className="hint">Enter to build · Shift+Enter for a new line</span>}
-              <button type="submit" disabled={!prompt.trim() || busy}>
+              <button type="submit" ref={submitButton} disabled={!prompt.trim() || busy}>
                 {busy && <span className="spinner" aria-hidden="true" />}
                 {busy ? 'Starting…' : 'Build workflow'}
               </button>
@@ -312,12 +331,15 @@ export function Home({
         ))}
       </div>
 
-      {/* The glide's two layers, placed and animated by the effect above. */}
+      {/* The glide's layers, placed and animated by the effect above: the composer growing
+          under the button, the button, and its two labels crossfading. */}
       {from && !landed && (
         <>
-          <div ref={ghost} className="new-glide" aria-hidden="true" />
-          <div ref={label} className="new-glide-label" aria-hidden="true">
-            {LABEL}
+          <div ref={ghostBox} className="new-glide-box" aria-hidden="true" />
+          <div ref={ghostButton} className="new-glide-button" aria-hidden="true" />
+          <div ref={ghostLabel} className="new-glide-label" aria-hidden="true">
+            <span>{FROM_LABEL}</span>
+            <span>{TO_LABEL}</span>
           </div>
         </>
       )}

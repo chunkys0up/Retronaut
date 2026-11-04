@@ -2986,48 +2986,88 @@ button.sort-button:focus-visible {
   animation: sink-out 0.52s cubic-bezier(0.4, 0, 0.2, 1) var(--out-delay, 40ms) forwards;
 }
 
-/* The glide's two layers (Home.tsx animates them): the box, laid out as the composer and
-   scaled from the button, and the label, laid out at the composer's text and scaled from
-   the button's. Both move by transform alone, as the send's flight does. */
-.new-glide,
+/* The glide's layers (Home.tsx animates them), each laid out where it lands and moved there
+   by transform alone, as the send's flight is: the composer growing out from under the
+   button, the orange button gliding onto Build workflow, and its two labels crossfading. */
+.new-glide-box,
+.new-glide-button,
 .new-glide-label {
   position: fixed;
   transform-origin: 0 0;
   pointer-events: none;
   will-change: transform;
 }
-.new-glide {
-  z-index: 49;
+.new-glide-box {
+  z-index: 48;
   border-radius: var(--radius);
   background: #fff;
 }
+.new-glide-button {
+  z-index: 49;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+}
 .new-glide-label {
   z-index: 50;
-  margin: 0;
-  font-size: 15px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.45;
   white-space: nowrap;
 }
+/* Both labels in one place, so one fades out as the other fades in. */
+.new-glide-label > span {
+  grid-area: 1 / 1;
+}
 
-/* The real composer waits, hidden, until the box lands on it; then its contents rise in,
-   as the build bar's do when the send's box lands on it. */
+/* The real composer waits, hidden, until the layers land on it; then its text rises in, as
+   the build bar's title row does when the send's box lands on it. (Build workflow doesn't:
+   the button landed exactly on it, as the send's segments land on the bar's.) */
 .composer.awaiting {
   visibility: hidden;
 }
-.composer.landing > * {
+.composer.landing > textarea {
   animation: bar-content-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* The glow: the same 0.9s and curve as its fade on sending, growing up from the bottom. */
+/* The glow: the faint one along the bottom of every page grows into the prompt screen's
+   full one, the reverse of sending, where the full one fades back into it. The full glow's
+   ellipse starts at the faint one's size (120% × 55%) and opens out to its own (131% ×
+   100%) as it fades in, on the same 0.9s curve as the fade on sending. */
+@property --glow-w {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 131%;
+}
+@property --glow-h {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 100%;
+}
+.glow-layer {
+  /* index.css's --glow, with its ellipse's size free to animate. */
+  background: radial-gradient(
+    ellipse var(--glow-w) var(--glow-h) at 50% 100%,
+    #ff4820 0%,
+    #f84720 21%,
+    #e44320 35%,
+    #c73e20 44.5%,
+    #a43820 51.8%,
+    #7d3120 59.6%,
+    #562a20 70.9%,
+    #312420 88.2%,
+    #212120 100%
+  );
+}
 .glow-layer.on.grow {
-  transform-origin: 50% 100%;
   animation: glow-grow 0.9s cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 @keyframes glow-grow {
   from {
     opacity: 0;
-    transform: scale(0.85, 0.3);
+    --glow-w: 120%;
+    --glow-h: 55%;
   }
 }
 
