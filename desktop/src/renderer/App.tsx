@@ -254,17 +254,6 @@ export default function App() {
             <PanelIcon />
           </button>
         </div>
-        <button
-          type="button"
-          className={`side-new${view.name === 'new' ? ' active' : ''}`}
-          onClick={() => go({ name: 'new' })}
-          aria-label="New workflow"
-          title={collapsed ? 'New workflow' : undefined}
-        >
-          <span className="plus" aria-hidden="true">+</span>
-          <span className="side-new-label">New workflow</span>
-        </button>
-
         <nav className="side-section side-tabs" aria-label="Pages">
           <button
             type="button"
