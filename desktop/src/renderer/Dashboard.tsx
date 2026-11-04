@@ -213,23 +213,16 @@ export function Dashboard({
               aria-label="Search workflows"
             />
           </label>
-          <div className="dash-sort" role="radiogroup" aria-label="Sort by">
+          <label className="dash-sort">
             <span className="muted small">Sort by</span>
-            <div className="seg">
+            <select value={sort} onChange={(e) => pickSort(e.target.value as Sort)}>
               {SORTS.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={sort === s.value}
-                  className={sort === s.value ? 'on' : undefined}
-                  onClick={() => pickSort(s.value)}
-                >
+                <option key={s.value} value={s.value}>
                   {s.label}
-                </button>
+                </option>
               ))}
-            </div>
-          </div>
+            </select>
+          </label>
         </div>
       )}
       {workflows.length > 0 && sorted.length === 0 ? (
