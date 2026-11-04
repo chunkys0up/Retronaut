@@ -2830,12 +2830,15 @@ body.pip-body {
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 8px;
-  width: 112px;
+  gap: 6px;
+  width: 84px;
 }
 .wf-card-actions button {
-  gap: 6px;
+  gap: 5px;
   width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 .dash-empty {
   display: flex;

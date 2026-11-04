@@ -70,9 +70,15 @@ function WorkflowCard({
       </div>
       <div className="wf-card-actions">
         {(wf.runnable || wf.script) && (
-          <button type="button" className="wf-card-run" onClick={onRun} disabled={running || state === 'idle' || wf.status === 'building'}>
-            {running && <span className="spinner" aria-hidden="true" />}
-            {running ? 'Running…' : 'Run'}
+          <button
+            type="button"
+            className="wf-card-run"
+            onClick={onRun}
+            disabled={running || state === 'idle' || wf.status === 'building'}
+            aria-label={running ? 'Running' : undefined}
+          >
+            {/* Too narrow for "Running…": just the spinner while it goes (the status line says it). */}
+            {running ? <span className="spinner" aria-hidden="true" /> : 'Run'}
           </button>
         )}
         <button type="button" className="secondary wf-card-open" onClick={onOpen} title="Open in full">
