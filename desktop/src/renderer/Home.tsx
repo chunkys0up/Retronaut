@@ -59,7 +59,23 @@ function Check({ ok, label, detail, fix }: { ok: boolean | null; label: string; 
   )
 }
 
-export function Home({ onStart, leaving = false }: { onStart: (prompt: string, from?: Box) => Promise<void>; leaving?: boolean }) {
+// Coming in from Home's New workflow button: how long its glide to the composer takes,
+// and the tiles' ripple outwards from the composer (the slot's centre, column 6.5, row 2).
+const GLIDE_MS = 620
+const RIPPLE_MS = 42 // per tile-step from the composer
+const RIPPLE_START = 90
+const rippleDelay = (column: number, row: number) => `${Math.round(RIPPLE_START + Math.hypot(column - 6.5, (row - 2) * 1.6) * RIPPLE_MS)}ms`
+
+export function Home({
+  onStart,
+  leaving = false,
+  from = null,
+}: {
+  onStart: (prompt: string, from?: Box) => Promise<void>
+  leaving?: boolean
+  /** Where the New workflow button was: it glides into the composer, and the screen ripples in around it. */
+  from?: Box | null
+}) {
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +107,31 @@ export function Home({ onStart, leaving = false }: { onStart: (prompt: string, f
   }, [])
 
   useLayoutEffect(fit, [fit, prompt, error])
+
+  // The button's glide: a copy of it flies from where it was to the composer, turning from
+  // orange to the composer's white, and the real composer takes over where it lands.
+  const ghost = useRef<HTMLDivElement>(null)
+  const [landed, setLanded] = useState(from === null)
+  useLayoutEffect(() => {
+    const el = ghost.current
+    const card = form.current
+    if (!from || !el || !card) return
+    const to = card.getBoundingClientRect()
+    const glide = el.animate(
+      [
+        { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px`, backgroundColor: '#ff4608', borderRadius: '8px', boxShadow: '0 0 0 rgba(0, 0, 0, 0)' },
+        { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px`, backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 18px 50px rgba(0, 0, 0, 0.18)' },
+      ],
+      { duration: GLIDE_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' },
+    )
+    glide.onfinish = () => {
+      setLanded(true)
+      box.current?.focus()
+    }
+    return () => glide.cancel()
+    // Once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   useEffect(() => {
     window.addEventListener('resize', fit)
     return () => window.removeEventListener('resize', fit)
@@ -143,7 +184,7 @@ export function Home({ onStart, leaving = false }: { onStart: (prompt: string, f
   const ready = health && health.droid && health.api_key && health.accessibility !== false && health.screen_recording !== 'denied'
 
   return (
-    <div className={`home${leaving ? ' leaving' : ''}`}>
+    <div className={`home${leaving ? ' leaving' : ''}${from ? ' entering' : ''}`}>
       {health && !ready && (
         <section className="notice home-notice" aria-label="Before you start">
           <h2>Before you start</h2>
@@ -182,13 +223,13 @@ export function Home({ onStart, leaving = false }: { onStart: (prompt: string, f
           <span
             key={`${c}-${r}`}
             className="tile"
-            style={{ ...at(c, r), ...blinks[i], '--out-delay': `${(r - 3) * 45 + Math.abs(c - 6.5) * 12}ms` } as CSSProperties}
+            style={{ ...at(c, r), ...blinks[i], '--out-delay': `${(r - 3) * 45 + Math.abs(c - 6.5) * 12}ms`, '--in-delay': rippleDelay(c, r) } as CSSProperties}
             aria-hidden="true"
           />
         ))}
 
         <div className="composer-slot" ref={slot}>
-          <form className="composer" ref={form} onSubmit={submit} onMouseDown={focusComposer}>
+          <form className={`composer${landed ? '' : ' awaiting'}`} ref={form} onSubmit={submit} onMouseDown={focusComposer}>
             <textarea
               ref={box}
               value={prompt}
@@ -210,12 +251,30 @@ export function Home({ onStart, leaving = false }: { onStart: (prompt: string, f
         </div>
 
         {SUGGESTIONS.map((s, i) => (
-          <button key={s.label} type="button" className="chip" style={at(4 + i * 2, 4, 2)} onClick={() => suggest(s.prompt)} title={s.prompt}>
+          <button
+            key={s.label}
+            type="button"
+            className="chip"
+            style={{ ...at(4 + i * 2, 4, 2), '--in-delay': rippleDelay(4.5 + i * 2, 4) } as CSSProperties}
+            onClick={() => suggest(s.prompt)}
+            title={s.prompt}
+          >
             <span>{s.label}</span>
             <img src={arrow} width={20} height={20} alt="" />
           </button>
         ))}
       </div>
+
+      {from && !landed && (
+        <div
+          ref={ghost}
+          className="new-glide"
+          style={{ left: from.left, top: from.top, width: from.width, height: from.height }}
+          aria-hidden="true"
+        >
+          <span>+ New workflow</span>
+        </div>
+      )}
     </div>
   )
 }

@@ -155,6 +155,10 @@ export default function App() {
   const [glowSnap, setGlowSnap] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null) // the caption the text lands on
   const [cardAnchor, setCardAnchor] = useState<HTMLElement | null>(null) // the progress card the box becomes
+  // Home's New workflow button: it glides into the composer while Home fades away under it,
+  // the glow grows to full and the tiles ripple in.
+  const [newFrom, setNewFrom] = useState<Box | null>(null)
+  const [homeLeaving, setHomeLeaving] = useState(false)
 
   const loadWorkflows = useCallback(async () => {
     try {
@@ -186,10 +190,21 @@ export default function App() {
     if (next.name === 'workflow') openTab(next.id)
     if (next.name !== 'workflow' || next.id !== intro?.id) setIntro(null)
     setLeaving(false)
+    setNewFrom(null)
+    setHomeLeaving(false)
     // From home to a workflow, the home glow goes at once (fading, it lingers behind the
     // workflow); every other switch, and sending a new prompt, keeps its fade.
     setGlowSnap(view.name === 'new' && next.name === 'workflow')
     setView(next)
+  }
+
+  function goNew(from: Box) {
+    const glide = view.name === 'home' && !prefersReducedMotion()
+    go({ name: 'new' })
+    if (!glide) return
+    setNewFrom(from)
+    setHomeLeaving(true)
+    setTimeout(() => setHomeLeaving(false), 480)
   }
 
   async function start(prompt: string, from?: Box) {
@@ -321,14 +336,23 @@ export default function App() {
       </aside>
 
       {/* The home screen's full glow, crossfading with the dimmer one behind other pages. */}
-      <div className={`glow-layer${view.name === 'new' && !leaving ? ' on' : ''}${glowSnap ? ' snap' : ''}`} aria-hidden="true" />
+      <div
+        className={`glow-layer${view.name === 'new' && !leaving ? ' on' : ''}${glowSnap ? ' snap' : ''}${newFrom ? ' grow' : ''}`}
+        aria-hidden="true"
+      />
 
       <main className="main">
         <div className="drag" aria-hidden="true" />
-        {view.name === 'home' && (
-          <Dashboard workflows={workflows} onOpen={(id) => go({ name: 'workflow', id })} onNew={() => go({ name: 'new' })} onChanged={loadWorkflows} />
+        {(view.name === 'home' || homeLeaving) && (
+          <Dashboard
+            workflows={workflows}
+            onOpen={(id) => go({ name: 'workflow', id })}
+            onNew={goNew}
+            onChanged={loadWorkflows}
+            leaving={homeLeaving}
+          />
         )}
-        {(view.name === 'new' || leaving) && <Home onStart={start} leaving={leaving} />}
+        {(view.name === 'new' || leaving) && <Home onStart={start} leaving={leaving} from={newFrom} />}
         {view.name === 'workflow' && (
           <WorkflowView
             key={view.id}

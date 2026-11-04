@@ -2954,3 +2954,96 @@ button.sort-button:focus-visible {
 .dash-none {
   padding: 8px 2px;
 }
+
+/* ---------- Home's New workflow: the button glides into the composer ----------
+   Home fades and lifts away under it, the glow grows up from the bottom to full, and
+   the tiles ripple in outwards from the composer (Home.tsx times each one). */
+
+.page.dashboard.leaving {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  margin: 0 auto;
+  pointer-events: none;
+  animation: dash-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes dash-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+    filter: blur(4px);
+  }
+}
+/* The button's copy in flight: Home animates its box from orange to the composer's white. */
+.new-glide {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ff4608;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: left, top, width, height;
+}
+.new-glide span {
+  animation: glide-label-out 0.2s ease-out forwards;
+}
+@keyframes glide-label-out {
+  to {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+/* The real composer waits, hidden, until the copy lands on it. */
+.composer.awaiting {
+  visibility: hidden;
+}
+.glow-layer.on.grow {
+  transform-origin: 50% 100%;
+  animation: glow-grow 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes glow-grow {
+  from {
+    opacity: 0;
+    transform: scale(0.85, 0.3);
+  }
+}
+.home.entering:not(.leaving) .tile,
+.home.entering:not(.leaving) .chip {
+  /* backwards: hidden through its delay, then back to its own styles (the chips' hover lift). */
+  animation: ripple-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) var(--in-delay, 0ms) backwards;
+}
+@keyframes ripple-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.92);
+  }
+}
+.home.entering:not(.leaving) .home-hero,
+.home.entering:not(.leaving) .home-notice {
+  animation: hero-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.18s backwards;
+}
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page.dashboard.leaving,
+  .glow-layer.on.grow,
+  .home.entering .tile,
+  .home.entering .chip,
+  .home.entering .home-hero,
+  .home.entering .home-notice {
+    animation: none;
+  }
+}

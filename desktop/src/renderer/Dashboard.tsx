@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { api, live, type JobSnapshot, type Workflow } from './api'
+import type { Box } from './Flight'
 
 const POLL_MS = 1500
 const ENDED_MS = 2600 // how long a finished card stays green (or red) before settling
@@ -236,12 +237,20 @@ export function Dashboard({
   onOpen,
   onNew,
   onChanged,
+  leaving = false,
 }: {
   workflows: Workflow[]
   onOpen: (id: string) => void
-  onNew: () => void
+  /** With where the button was, for its glide into the composer. */
+  onNew: (from: Box) => void
   onChanged: () => void
+  /** Fading away under the New workflow button's glide. */
+  leaving?: boolean
 }) {
+  const newFrom = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    onNew({ left: r.left, top: r.top, width: r.width, height: r.height })
+  }
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<Sort>(loadSort)
   function pickSort(next: Sort) {
@@ -303,13 +312,13 @@ export function Dashboard({
     running ? (running.id === id ? 'running' : 'idle') : ended?.id === id ? (ended.ok ? 'passed' : 'failed') : null
 
   return (
-    <div className="page dashboard">
+    <div className={`page dashboard${leaving ? ' leaving' : ''}`} inert={leaving}>
       <header className="view-head">
         <div className="view-title">
           <h1>Home</h1>
         </div>
         <div className="view-actions">
-          <button type="button" onClick={onNew}>
+          <button type="button" className="new-button" onClick={newFrom}>
             + New workflow
           </button>
         </div>
@@ -335,7 +344,7 @@ export function Dashboard({
       ) : sorted.length === 0 ? (
         <div className="dash-empty">
           <p className="muted">Nothing automated yet.</p>
-          <button type="button" className="secondary" onClick={onNew}>
+          <button type="button" className="secondary" onClick={newFrom}>
             Build your first workflow
           </button>
         </div>
