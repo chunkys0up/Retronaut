@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
-import { BuildCard } from './BuildCard'
+import { BuildCard, formatDuration } from './BuildCard'
 import { DROP_SPRING, prefersReducedMotion, type Intro } from './Flight'
 import { ActivityPopup, FEED_OUT_MS, Popup, StepFeed } from './StepFeed'
-import { api, live, openExternal, type JobSnapshot, type Plan, type RunSummary, type UserRequest, type Workflow } from './api'
+import { api, expectedSteps, live, openExternal, type JobSnapshot, type Plan, type RunSummary, type UserRequest, type Workflow } from './api'
 
 const POLL_MS = 900
 
@@ -531,6 +531,8 @@ function RunRow({ wfId, run }: { wfId: string; run: RunSummary }) {
         <span className={`dot ${ok ? 'dot-ok' : 'dot-fail'}`} aria-hidden="true" />
         <span className="run-kind">{name}</span>
         <span className="muted small run-what">{ok ? summaryText(run.summary) : run.error}</span>
+        {/* How long it took, by the date; nothing for a run that never recorded its end. */}
+        <span className="muted small mono run-took">{run.finished != null ? formatDuration(run.finished - run.started) : ''}</span>
         <span className="muted small run-when">{when(run.started)}</span>
       </button>
       {detail && (
@@ -829,7 +831,7 @@ export function WorkflowView({
               </div>
             </header>
             <div className="wf-bar-run" inert={!cardOpen}>
-              <div className="wf-bar-run-inner">{job?.kind === 'run' && <BuildCard job={job} onPause={pause} bare />}</div>
+              <div className="wf-bar-run-inner">{job?.kind === 'run' && <BuildCard job={job} onPause={pause} bare expected={expectedSteps(wf.runs)} />}</div>
             </div>
           </div>
         </div>

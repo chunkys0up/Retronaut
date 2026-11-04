@@ -157,6 +157,7 @@ export function BuildCard({
   cardRef,
   bar,
   bare = false,
+  expected = null,
 }: {
   job: JobSnapshot
   onStop?: () => void
@@ -167,6 +168,8 @@ export function BuildCard({
   bar?: { caption: ReactNode }
   /** Just its contents, no card of its own: for a card around it and more (the workflow bar). */
   bare?: boolean
+  /** How many steps the run should take (expectedSteps), for "Step 4/8" in the bare card. */
+  expected?: number | null
 }) {
   const [now, setNow] = useState(() => Date.now() / 1000)
   const running = live(job.status)
@@ -218,7 +221,9 @@ export function BuildCard({
           <h2>{title}</h2>
           {/* The bar leaves what it's doing to the step in the middle of the page (StepFeed). */}
           <p className="muted small">
-            {!bar && <>{latest ? friendly(latest, job.events) : 'Starting the agent…'} · </>}
+            {/* In the workflow bar's run card, "Step 4/8" as the picture-in-picture shows it, moving
+                with its steps as they're let in; elsewhere, what it's doing. */}
+            {!bar && <>{(bare && stepProgress({ ...job, events: job.events.filter((e) => e.i <= upTo) }, expected)) || (latest ? friendly(latest, job.events) : 'Starting the agent…')} · </>}
             <span className="timer">{formatDuration(elapsed)}</span>
           </p>
         </div>

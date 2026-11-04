@@ -2073,7 +2073,7 @@ input.feedback {
 button.run-row {
   height: auto;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -2104,6 +2104,7 @@ button.run-row:hover:not(:disabled) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.run-took,
 .run-when {
   white-space: nowrap;
 }

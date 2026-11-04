@@ -85,6 +85,18 @@ export type RunSummary = {
   summary: unknown
   error: string | null
   healed: boolean
+  /** How many script steps it got through. */
+  steps?: number
+}
+
+/**
+ * How many steps a run of this workflow should take, for "Step 4/8": the last good run's
+ * count, or with none kept, the most any run got to (as the engine's /live works it out).
+ */
+export function expectedSteps(runs: RunSummary[]): number | null {
+  const lastGood = runs.find((r) => r.kind === 'run' && r.status === 'passed' && r.steps)
+  const furthest = Math.max(0, ...runs.filter((r) => r.kind === 'run').map((r) => r.steps ?? 0))
+  return lastGood?.steps ?? (furthest || null)
 }
 
 export type Workflow = {
