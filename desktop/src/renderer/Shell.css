@@ -2883,9 +2883,15 @@ button.sort-button:hover:not(:disabled) {
   border-color: var(--subtle);
   background: var(--field);
 }
-button.sort-button.open {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--ring);
+/* Open, just a lighter edge; no orange border or ring. Keyboard focus keeps an outline,
+   but a neutral one. */
+button.sort-button.open,
+button.sort-button.open:hover:not(:disabled) {
+  border-color: var(--subtle);
+}
+button.sort-button:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
 }
 .sort-button svg {
   color: var(--muted);
