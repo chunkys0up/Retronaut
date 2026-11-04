@@ -277,17 +277,6 @@ export default function App() {
             </span>
             <span className="side-item-name">Home</span>
           </button>
-          <button
-            type="button"
-            className={`side-item${view.name === 'data' ? ' active' : ''}`}
-            onClick={() => go({ name: 'data' })}
-            title={collapsed ? 'Data & read APIs' : undefined}
-          >
-            <span className="side-glyph" aria-hidden="true">
-              <DataIcon />
-            </span>
-            <span className="side-item-name">Data &amp; read APIs</span>
-          </button>
         </nav>
 
         <div className="side-scroll">
@@ -321,11 +310,22 @@ export default function App() {
           )}
         </div>
 
-        <nav className="side-section side-bottom" aria-label="Accounts">
+        <nav className="side-section side-bottom" aria-label="Data and accounts">
           <button type="button" className="side-item" onClick={() => setAccountsOpen(true)}>
             <span className="side-glyph" aria-hidden="true">@</span>
             <span className="side-item-name">Accounts</span>
             <span className="side-item-meta">{gmail ? 'Gmail' : 'Factory'}</span>
+          </button>
+          <button
+            type="button"
+            className={`side-item${view.name === 'data' ? ' active' : ''}`}
+            onClick={() => go({ name: 'data' })}
+            title={collapsed ? 'Data & read APIs' : undefined}
+          >
+            <span className="side-glyph" aria-hidden="true">
+              <DataIcon />
+            </span>
+            <span className="side-item-name">Data &amp; read APIs</span>
           </button>
           {offline && <p className="side-empty small offline">Engine not reachable</p>}
         </nav>

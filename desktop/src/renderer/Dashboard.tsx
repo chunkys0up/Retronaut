@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { api, live, type JobSnapshot, type Workflow } from './api'
 
 const POLL_MS = 1500
+const ENDED_MS = 2600 // how long a finished card stays green (or red) before settling
 
 const STATUS: Record<Workflow['status'], { dot: string; label: string }> = {
   building: { dot: 'dot-info dot-live', label: 'Building' },
@@ -25,45 +26,34 @@ export function lastRun(wf: Workflow) {
   return wf.runs.find((r) => r.kind !== 'build') ?? null
 }
 
-/** One workflow: its name and prompt, with Run and Open on the right. */
-function WorkflowCard({ wf, onOpen, onChanged }: { wf: Workflow; onOpen: () => void; onChanged: () => void }) {
-  const [job, setJob] = useState<JobSnapshot | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const running = live(job?.status)
+/**
+ * A card's part in a run started from Home: running (orange, with a shimmer), passed or
+ * failed (green or red for a moment), idle (greyed while another card runs), or none.
+ */
+type CardState = 'running' | 'passed' | 'failed' | 'idle' | null
 
-  // Follow a run started here until it ends, then let the list catch up.
-  useEffect(() => {
-    if (!job || !live(job.status)) return
-    const timer = setTimeout(async () => {
-      try {
-        const next = await api<JobSnapshot>(`/jobs/${job.job_id}`)
-        setJob(next)
-        if (!live(next.status)) onChanged()
-      } catch {
-        setJob(null)
-      }
-    }, POLL_MS)
-    return () => clearTimeout(timer)
-  }, [job, onChanged])
-
-  async function run() {
-    setError(null)
-    try {
-      const { job_id } = await api<{ job_id: string }>(`/workflows/${wf.id}/run`, {})
-      setJob(await api<JobSnapshot>(`/jobs/${job_id}`))
-      onChanged()
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }
-
+/** One workflow: its name and prompt, with Open in the top corner and Run stacked under it. */
+function WorkflowCard({
+  wf,
+  state,
+  error,
+  onRun,
+  onOpen,
+}: {
+  wf: Workflow
+  state: CardState
+  error: string | null
+  onRun: () => void
+  onOpen: () => void
+}) {
   const last = lastRun(wf)
+  const running = state === 'running'
   const status = running ? { dot: 'dot-info dot-live', label: 'Running' } : STATUS[wf.status]
-  const ended = job && !running ? (job.status === 'passed' ? 'Run passed' : 'Run ended') : null
-  const alarm = !running && (wf.status === 'needs_attention' || wf.status === 'failed')
+  const label = state === 'passed' ? 'Run passed' : state === 'failed' ? 'Run failed' : status.label
+  const tone = state === 'passed' ? 'text-ok' : state === 'failed' || (!state && (wf.status === 'needs_attention' || wf.status === 'failed')) ? 'text-warn' : 'muted'
 
   return (
-    <article className="wf-card">
+    <article className={`wf-card${state ? ` ${state}` : ''}`} aria-busy={running}>
       <div className="wf-card-text">
         <div className="wf-card-top">
           <span className={`dot ${status.dot}`} aria-hidden="true" />
@@ -73,24 +63,24 @@ function WorkflowCard({ wf, onOpen, onChanged }: { wf: Workflow; onOpen: () => v
           {wf.goal}
         </p>
         <p className="wf-card-meta small">
-          <span className={alarm ? 'text-warn' : 'muted'}>{ended ?? status.label}</span>
+          <span className={tone}>{label}</span>
           {last && <span className="subtle"> · last run {ago(last.started)}</span>}
         </p>
         {error && <p className="request-error small">{error}</p>}
       </div>
       <div className="wf-card-actions">
-        {wf.script && (
-          <button type="button" onClick={run} disabled={running || wf.status === 'building'}>
-            {running && <span className="spinner" aria-hidden="true" />}
-            {running ? 'Running…' : 'Run'}
-          </button>
-        )}
-        <button type="button" className="secondary" onClick={onOpen} title="Open in full">
+        <button type="button" className="secondary wf-card-open" onClick={onOpen} title="Open in full">
           Open
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 3h6v6M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" />
           </svg>
         </button>
+        {wf.script && (
+          <button type="button" className="wf-card-run" onClick={onRun} disabled={running || state === 'idle' || wf.status === 'building'}>
+            {running && <span className="spinner" aria-hidden="true" />}
+            {running ? 'Running…' : 'Run'}
+          </button>
+        )}
       </div>
     </article>
   )
@@ -109,6 +99,50 @@ export function Dashboard({
   onChanged: () => void
 }) {
   const sorted = [...workflows].sort((a, b) => b.updated - a.updated)
+  // One run at a time from here: the card running it, and once over, how it went.
+  const [running, setRunning] = useState<{ id: string; job: JobSnapshot } | null>(null)
+  const [ended, setEnded] = useState<{ id: string; ok: boolean } | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Follow the run until it ends, then let the list catch up.
+  useEffect(() => {
+    if (!running) return
+    const timer = setTimeout(async () => {
+      try {
+        const job = await api<JobSnapshot>(`/jobs/${running.job.job_id}`)
+        if (live(job.status)) return setRunning({ id: running.id, job })
+        setRunning(null)
+        setEnded({ id: running.id, ok: job.status === 'passed' })
+        onChanged()
+      } catch {
+        setRunning(null)
+      }
+    }, POLL_MS)
+    return () => clearTimeout(timer)
+  }, [running, onChanged])
+
+  // The finished card holds its colour a moment, then eases back.
+  useEffect(() => {
+    if (!ended) return
+    const timer = setTimeout(() => setEnded(null), ENDED_MS)
+    return () => clearTimeout(timer)
+  }, [ended])
+
+  async function run(id: string) {
+    setErrors(({ [id]: _, ...rest }) => rest)
+    setEnded(null)
+    try {
+      const { job_id } = await api<{ job_id: string }>(`/workflows/${id}/run`, {})
+      setRunning({ id, job: await api<JobSnapshot>(`/jobs/${job_id}`) })
+      onChanged()
+    } catch (e) {
+      setErrors((all) => ({ ...all, [id]: (e as Error).message }))
+    }
+  }
+
+  const stateOf = (id: string): CardState =>
+    running ? (running.id === id ? 'running' : 'idle') : ended?.id === id ? (ended.ok ? 'passed' : 'failed') : null
+
   return (
     <div className="page dashboard">
       <header className="view-head">
@@ -132,7 +166,14 @@ export function Dashboard({
       ) : (
         <div className="wf-grid">
           {sorted.map((wf) => (
-            <WorkflowCard key={wf.id} wf={wf} onOpen={() => onOpen(wf.id)} onChanged={onChanged} />
+            <WorkflowCard
+              key={wf.id}
+              wf={wf}
+              state={stateOf(wf.id)}
+              error={errors[wf.id] ?? null}
+              onRun={() => run(wf.id)}
+              onOpen={() => onOpen(wf.id)}
+            />
           ))}
         </div>
       )}
