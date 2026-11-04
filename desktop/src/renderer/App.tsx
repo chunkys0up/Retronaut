@@ -3,6 +3,7 @@ import './App.css'
 import './Shell.css'
 
 import { api, onAttention, type Health, type Workflow } from './api'
+import { Dashboard, lastRun } from './Dashboard'
 import { GmailConnect } from './GmailConnect'
 import logo from './assets/logo.png'
 import { DataView } from './DataView'
@@ -10,7 +11,8 @@ import { captionWidth, prefersReducedMotion, PromptFlight, type Box, type Intro 
 import { Home } from './Home'
 import { WorkflowView } from './WorkflowView'
 
-type View = { name: 'home' } | { name: 'workflow'; id: string } | { name: 'data' }
+// home: the dashboard of workflow cards; new: the prompt box that builds one.
+type View = { name: 'home' } | { name: 'new' } | { name: 'workflow'; id: string } | { name: 'data' }
 
 const DOT: Record<Workflow['status'], string> = {
   building: 'dot-info dot-live',
@@ -68,7 +70,36 @@ function PanelIcon() {
   )
 }
 
+function HomeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" />
+    </svg>
+  )
+}
+
+function DataIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <ellipse cx="12" cy="5.5" rx="8" ry="2.5" />
+      <path d="M4 5.5v13c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-13M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5" />
+    </svg>
+  )
+}
+
 const SIDEBAR_KEY = 'sidebar-collapsed'
+const TABS_KEY = 'open-workflows'
+const RECENT_S = 24 * 3600 // a run within this long puts its workflow under Recently run
+const RECENT_MAX = 5
+
+function loadTabs(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(TABS_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
 const NARROW = '(max-width: 760px)'
 
 export default function App() {
@@ -77,6 +108,16 @@ export default function App() {
   const [offline, setOffline] = useState(false)
   const [gmail, setGmail] = useState<string | null>(null)
   const [accountsOpen, setAccountsOpen] = useState(false)
+  // Workflows opened in full, kept as tabs in the sidebar until closed; remembered per machine.
+  const [tabs, setTabs] = useState<string[]>(loadTabs)
+  useEffect(() => {
+    try {
+      localStorage.setItem(TABS_KEY, JSON.stringify(tabs))
+    } catch {
+      // storage can be unavailable; the tabs just aren't remembered
+    }
+  }, [tabs])
+  const openTab = useCallback((id: string) => setTabs((t) => (t.includes(id) ? t : [...t, id])), [])
   const loadAccounts = useCallback(() => {
     api<Health>('/health')
       .then((h) => setGmail(h.gmail))
@@ -135,23 +176,26 @@ export default function App() {
     () =>
       onAttention((id) => {
         void loadWorkflows()
+        openTab(id)
         setView({ name: 'workflow', id })
       }),
-    [loadWorkflows],
+    [loadWorkflows, openTab],
   )
 
   function go(next: View) {
+    if (next.name === 'workflow') openTab(next.id)
     if (next.name !== 'workflow' || next.id !== intro?.id) setIntro(null)
     setLeaving(false)
     // From home to a workflow, the home glow goes at once (fading, it lingers behind the
     // workflow); every other switch, and sending a new prompt, keeps its fade.
-    setGlowSnap(view.name === 'home' && next.name === 'workflow')
+    setGlowSnap(view.name === 'new' && next.name === 'workflow')
     setView(next)
   }
 
   async function start(prompt: string, from?: Box) {
     const { workflow_id } = await api<{ workflow_id: string; job_id: string }>('/workflows', { prompt })
     void loadWorkflows()
+    openTab(workflow_id)
     if (from && !prefersReducedMotion()) {
       setIntro({ id: workflow_id, prompt, from, width: captionWidth(from), landed: false })
       setLeaving(true)
@@ -159,6 +203,30 @@ export default function App() {
     }
     setView({ name: 'workflow', id: workflow_id })
   }
+
+  function closeTab(id: string) {
+    setTabs((t) => t.filter((x) => x !== id))
+    if (view.name === 'workflow' && view.id === id) go({ name: 'home' })
+  }
+
+  // The sidebar's workflows, each in one place: needing the person first, then run in the
+  // last day, then the rest of the tabs opened from Home. They move between them on their own.
+  const now = Date.now() / 1000
+  const attention = workflows.filter((w) => w.status === 'needs_attention' || w.status === 'failed')
+  const recent = workflows
+    .filter((w) => !attention.includes(w))
+    .map((w) => ({ w, at: lastRun(w)?.started ?? 0 }))
+    .filter(({ at }) => now - at < RECENT_S)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, RECENT_MAX)
+    .map(({ w }) => w)
+  const byId = new Map(workflows.map((w) => [w.id, w]))
+  const opened = tabs.map((id) => byId.get(id)).filter((w): w is Workflow => w !== undefined && !attention.includes(w) && !recent.includes(w))
+  const sections = [
+    { label: 'Needs attention', items: attention, closable: false },
+    { label: 'Recently run', items: recent, closable: false },
+    { label: 'Workflows', items: opened, closable: true },
+  ]
 
   return (
     <div className={`shell${collapsed ? ' collapsed' : ''}`}>
@@ -188,8 +256,8 @@ export default function App() {
         </div>
         <button
           type="button"
-          className={`side-new${view.name === 'home' ? ' active' : ''}`}
-          onClick={() => go({ name: 'home' })}
+          className={`side-new${view.name === 'new' ? ' active' : ''}`}
+          onClick={() => go({ name: 'new' })}
           aria-label="New workflow"
           title={collapsed ? 'New workflow' : undefined}
         >
@@ -197,46 +265,81 @@ export default function App() {
           <span className="side-new-label">New workflow</span>
         </button>
 
-        <nav className="side-section" aria-label="Workflows">
-          <div className="side-label">Workflows</div>
-          {workflows.length === 0 && <p className="side-empty muted small">Nothing automated yet.</p>}
-          <ul>
-            {workflows.map((w) => (
-              <li key={w.id}>
-                <button
-                  type="button"
-                  className={`side-item${view.name === 'workflow' && view.id === w.id ? ' active' : ''}`}
-                  onClick={() => go({ name: 'workflow', id: w.id })}
-                  title={collapsed ? w.title : w.goal}
-                >
-                  <span className={`dot ${DOT[w.status]}`} aria-hidden="true" />
-                  <span className="side-item-name">{w.title}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        <nav className="side-section side-tabs" aria-label="Pages">
+          <button
+            type="button"
+            className={`side-item${view.name === 'home' ? ' active' : ''}`}
+            onClick={() => go({ name: 'home' })}
+            title={collapsed ? 'Home' : undefined}
+          >
+            <span className="side-glyph" aria-hidden="true">
+              <HomeIcon />
+            </span>
+            <span className="side-item-name">Home</span>
+          </button>
+          <button
+            type="button"
+            className={`side-item${view.name === 'data' ? ' active' : ''}`}
+            onClick={() => go({ name: 'data' })}
+            title={collapsed ? 'Data & read APIs' : undefined}
+          >
+            <span className="side-glyph" aria-hidden="true">
+              <DataIcon />
+            </span>
+            <span className="side-item-name">Data &amp; read APIs</span>
+          </button>
         </nav>
 
-        <nav className="side-section side-bottom" aria-label="Data and accounts">
+        <div className="side-scroll">
+          {sections.map(
+            (section) =>
+              section.items.length > 0 && (
+                <nav key={section.label} className="side-section" aria-label={section.label}>
+                  <div className="side-label">{section.label}</div>
+                  <ul>
+                    {section.items.map((w) => (
+                      <li key={w.id} className="side-tab">
+                        <button
+                          type="button"
+                          className={`side-item${view.name === 'workflow' && view.id === w.id ? ' active' : ''}`}
+                          onClick={() => go({ name: 'workflow', id: w.id })}
+                          title={collapsed ? w.title : w.goal}
+                        >
+                          <span className={`dot ${DOT[w.status]}`} aria-hidden="true" />
+                          <span className="side-item-name">{w.title}</span>
+                        </button>
+                        {section.closable && (
+                          <button type="button" className="side-close" onClick={() => closeTab(w.id)} aria-label={`Close ${w.title}`} title="Close">
+                            ×
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              ),
+          )}
+        </div>
+
+        <nav className="side-section side-bottom" aria-label="Accounts">
           <button type="button" className="side-item" onClick={() => setAccountsOpen(true)}>
             <span className="side-glyph" aria-hidden="true">@</span>
             <span className="side-item-name">Accounts</span>
             <span className="side-item-meta">{gmail ? 'Gmail' : 'Factory'}</span>
-          </button>
-          <button type="button" className={`side-item${view.name === 'data' ? ' active' : ''}`} onClick={() => go({ name: 'data' })}>
-            <span className="side-glyph" aria-hidden="true">≡</span>
-            <span className="side-item-name">Data &amp; read APIs</span>
           </button>
           {offline && <p className="side-empty small offline">Engine not reachable</p>}
         </nav>
       </aside>
 
       {/* The home screen's full glow, crossfading with the dimmer one behind other pages. */}
-      <div className={`glow-layer${view.name === 'home' && !leaving ? ' on' : ''}${glowSnap ? ' snap' : ''}`} aria-hidden="true" />
+      <div className={`glow-layer${view.name === 'new' && !leaving ? ' on' : ''}${glowSnap ? ' snap' : ''}`} aria-hidden="true" />
 
       <main className="main">
         <div className="drag" aria-hidden="true" />
-        {(view.name === 'home' || leaving) && <Home onStart={start} leaving={leaving} />}
+        {view.name === 'home' && (
+          <Dashboard workflows={workflows} onOpen={(id) => go({ name: 'workflow', id })} onNew={() => go({ name: 'new' })} onChanged={loadWorkflows} />
+        )}
+        {(view.name === 'new' || leaving) && <Home onStart={start} leaving={leaving} />}
         {view.name === 'workflow' && (
           <WorkflowView
             key={view.id}
@@ -246,6 +349,7 @@ export default function App() {
             introCard={setCardAnchor}
             onChanged={loadWorkflows}
             onDeleted={() => {
+              setTabs((t) => t.filter((x) => x !== view.id))
               go({ name: 'home' })
               void loadWorkflows()
             }}

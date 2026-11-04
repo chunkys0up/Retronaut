@@ -280,6 +280,72 @@ button.brand-button:hover:not(:disabled) {
   transform: none;
 }
 
+/* ---------- sidebar tabs and workflow sections ----------
+   Home and Data are tabs at the top; under them the workflows sort themselves into
+   Needs attention, Recently run, and the tabs opened from Home. */
+
+.side-tabs {
+  gap: 2px;
+  margin-bottom: 18px;
+  overflow: visible;
+}
+/* A glyph centres where a dot does (under the logo), so tabs and workflows line up. */
+.side-section button.side-item .side-glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin: 0 -3.5px;
+}
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.side-scroll .side-section {
+  overflow: visible;
+}
+.side-tab {
+  position: relative;
+}
+/* Closing a tab: a small × over the row's right end, shown on hover. */
+.side-tab:has(.side-close) button.side-item {
+  padding-right: 30px;
+}
+button.side-close {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--subtle);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s, color 0.15s;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.side-tab:hover button.side-close,
+button.side-close:focus-visible {
+  opacity: 1;
+}
+button.side-close:hover:not(:disabled) {
+  background: var(--neutral-soft);
+  color: var(--text);
+}
+.collapsed button.side-close {
+  display: none;
+}
+
 /* ---------- main area ---------- */
 
 .main {
@@ -2630,5 +2696,102 @@ body.pip-body {
   }
   .phases {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Home: a grid of wide workflow cards ---------- */
+
+.text-warn { color: var(--warn-text); }
+.subtle { color: var(--subtle); }
+
+.wf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr));
+  gap: 16px;
+}
+.wf-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  min-height: 132px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.wf-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.wf-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wf-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.wf-card-top .dot {
+  margin-top: 0;
+}
+.wf-card h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.wf-card-goal {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.wf-card-meta {
+  margin-top: 2px;
+}
+.wf-card-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 108px;
+}
+.wf-card-actions button {
+  gap: 6px;
+}
+.dash-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 28px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+@media (max-width: 520px) {
+  .wf-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wf-card-actions {
+    flex-direction: row;
+  }
+  .wf-card-actions button {
+    flex: 1;
   }
 }
