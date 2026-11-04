@@ -41,9 +41,12 @@ export const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-mo
 
 export { DROP_SPRING } from '../shared/motion'
 
-const GLIDE = { duration: 860, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' } as const
-const glideEase = cubicBezier(0.22, 1, 0.36, 1)
-const RADIUS = 12 // the composer's corners; the bar's are square
+// Shared with Home's New workflow glide (Home.tsx), which runs the same way into the composer.
+export const GLIDE = { duration: 860, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' } as const
+export const glideEase = cubicBezier(0.22, 1, 0.36, 1)
+export const RADIUS = 12 // the composer's corners; the bar's are square
+/** The composer's resting look, as the flying box draws it: a hairline ring and its shadow. */
+export const COMPOSER_SHADOW = 'inset 0 0 0 1px rgba(0, 0, 0, 0.21), 0 18px 50px rgba(0, 0, 0, 0.18)'
 
 export function PromptFlight({ intro, anchor, card, onLanded }: { intro: Intro; anchor: HTMLElement; card: HTMLElement; onLanded: () => void }) {
   const text = useRef<HTMLDivElement>(null)

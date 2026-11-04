@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 
 import { api, inElectron, openPrivacy, type Health } from './api'
 import arrow from './assets/arrow-up-right.svg'
-import type { Box } from './Flight'
+import { COMPOSER_SHADOW, GLIDE, glideEase, RADIUS, type Box } from './Flight'
 
 // Short teasers on the stage; picking one puts the whole prompt in the composer.
 const SUGGESTIONS = [
@@ -59,12 +59,11 @@ function Check({ ok, label, detail, fix }: { ok: boolean | null; label: string; 
   )
 }
 
-// Coming in from Home's New workflow button: how long its glide to the composer takes,
-// and the tiles' ripple outwards from the composer (the slot's centre, column 6.5, row 2).
-const GLIDE_MS = 620
-const RIPPLE_MS = 42 // per tile-step from the composer
-const RIPPLE_START = 90
-const rippleDelay = (column: number, row: number) => `${Math.round(RIPPLE_START + Math.hypot(column - 6.5, (row - 2) * 1.6) * RIPPLE_MS)}ms`
+// Coming in from Home's New workflow button: the send animation (Flight.tsx) run the other
+// way, button into composer, with the same glide, timings and fades.
+const LABEL = '+ New workflow'
+const LABEL_PX = 12 // the button's text; the composer's is 15px, and the label scales between
+const BUTTON_RADIUS = 8
 
 export function Home({
   onStart,
@@ -108,28 +107,76 @@ export function Home({
 
   useLayoutEffect(fit, [fit, prompt, error])
 
-  // The button's glide: a copy of it flies from where it was to the composer, turning from
-  // orange to the composer's white, and the real composer takes over where it lands.
+  // The button's glide, built as the send animation is (Flight.tsx), in two layers moved by
+  // transform alone so it runs on the compositor with sub-pixel steps:
+  // - the box: laid out as the composer, scaled down to the button and glided up to full
+  //   size, orange to the composer's white, its corners kept round against the scale;
+  // - the label: laid out at the composer's text, at its 15px, scaled down to the button's
+  //   12px and glided across with the box, dimming to the placeholder's grey and fading as
+  //   it lands, where the composer's own contents rise in (as the build bar's do).
   const ghost = useRef<HTMLDivElement>(null)
+  const label = useRef<HTMLDivElement>(null)
   const [landed, setLanded] = useState(from === null)
   useLayoutEffect(() => {
-    const el = ghost.current
+    const shell = ghost.current
+    const words = label.current
     const card = form.current
-    if (!from || !el || !card) return
-    const to = card.getBoundingClientRect()
-    const glide = el.animate(
-      [
-        { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px`, backgroundColor: '#ff4608', borderRadius: '8px', boxShadow: '0 0 0 rgba(0, 0, 0, 0)' },
-        { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px`, backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 18px 50px rgba(0, 0, 0, 0.18)' },
-      ],
-      { duration: GLIDE_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' },
+    const text = box.current
+    if (!from || !shell || !words || !card || !text) return
+
+    // The box: from the button's to the composer's, scaled unevenly.
+    const target = card.getBoundingClientRect()
+    Object.assign(shell.style, { left: `${target.left}px`, top: `${target.top}px`, width: `${target.width}px`, height: `${target.height}px` })
+    const sx = from.width / target.width
+    const sy = from.height / target.height
+    const reshape = shell.animate(
+      [{ transform: `translate(${from.left - target.left}px, ${from.top - target.top}px) scale(${sx}, ${sy})` }, { transform: 'none' }],
+      GLIDE,
     )
-    glide.onfinish = () => {
+    const lighten = shell.animate(
+      [
+        { backgroundColor: 'rgb(255, 70, 8)', boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0), 0 18px 50px rgba(0, 0, 0, 0)' },
+        { offset: 0.5, backgroundColor: 'rgb(255, 196, 170)', boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 18px 50px rgba(0, 0, 0, 0.09)' },
+        { backgroundColor: 'rgb(255, 255, 255)', boxShadow: COMPOSER_SHADOW },
+      ],
+      { duration: 450, easing: 'ease-out', fill: 'both' },
+    )
+    // The corners go from the button's 8px to the composer's 12px along the glide's own
+    // curve, set against the uneven scale so they look round all the way.
+    const steps = 32
+    const round = shell.animate(
+      Array.from({ length: steps + 1 }, (_, i) => {
+        const p = glideEase(i / steps)
+        const r = BUTTON_RADIUS + (RADIUS - BUTTON_RADIUS) * p
+        return { offset: i / steps, borderRadius: `${r / (sx + (1 - sx) * p)}px / ${r / (sy + (1 - sy) * p)}px` }
+      }),
+      { duration: GLIDE.duration, fill: 'both' },
+    )
+
+    // The label: laid out where the composer's text starts, and started back on the button,
+    // centred and scaled to its 12px.
+    const at = text.getBoundingClientRect()
+    Object.assign(words.style, { left: `${at.left}px`, top: `${at.top}px` })
+    const s = LABEL_PX / 15
+    const startLeft = from.left + (from.width - words.offsetWidth * s) / 2
+    const startTop = from.top + (from.height - words.offsetHeight * s) / 2
+    const glide = words.animate([{ transform: `translate(${startLeft - at.left}px, ${startTop - at.top}px) scale(${s})` }, { transform: 'none' }], GLIDE)
+    const dim = words.animate(
+      [{ color: 'rgb(255, 255, 255)' }, { offset: 0.45, color: 'rgba(36, 36, 36, 0.85)' }, { color: 'rgba(36, 36, 36, 0.5)' }],
+      { duration: 700, easing: 'ease-in-out', fill: 'both' },
+    )
+    // Not the placeholder's words, so it hands over: there until 30% of the way, then gone
+    // as the composer's own contents come in.
+    const fade = words.animate([{ opacity: 1 }, { offset: 0.3, opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-out', fill: 'both' })
+
+    Promise.all([glide.finished, reshape.finished]).then(() => {
       setLanded(true)
-      box.current?.focus()
+      text.focus()
+    }, () => {})
+    return () => {
+      for (const a of [reshape, lighten, round, glide, dim, fade]) a.cancel()
     }
-    return () => glide.cancel()
-    // Once, as it arrives.
+    // Runs once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
@@ -223,13 +270,13 @@ export function Home({
           <span
             key={`${c}-${r}`}
             className="tile"
-            style={{ ...at(c, r), ...blinks[i], '--out-delay': `${(r - 3) * 45 + Math.abs(c - 6.5) * 12}ms`, '--in-delay': rippleDelay(c, r) } as CSSProperties}
+            style={{ ...at(c, r), ...blinks[i], '--out-delay': `${(r - 3) * 45 + Math.abs(c - 6.5) * 12}ms` } as CSSProperties}
             aria-hidden="true"
           />
         ))}
 
         <div className="composer-slot" ref={slot}>
-          <form className={`composer${landed ? '' : ' awaiting'}`} ref={form} onSubmit={submit} onMouseDown={focusComposer}>
+          <form className={`composer${!landed ? ' awaiting' : from ? ' landing' : ''}`} ref={form} onSubmit={submit} onMouseDown={focusComposer}>
             <textarea
               ref={box}
               value={prompt}
@@ -255,7 +302,7 @@ export function Home({
             key={s.label}
             type="button"
             className="chip"
-            style={{ ...at(4 + i * 2, 4, 2), '--in-delay': rippleDelay(4.5 + i * 2, 4) } as CSSProperties}
+            style={at(4 + i * 2, 4, 2)}
             onClick={() => suggest(s.prompt)}
             title={s.prompt}
           >
@@ -265,15 +312,14 @@ export function Home({
         ))}
       </div>
 
+      {/* The glide's two layers, placed and animated by the effect above. */}
       {from && !landed && (
-        <div
-          ref={ghost}
-          className="new-glide"
-          style={{ left: from.left, top: from.top, width: from.width, height: from.height }}
-          aria-hidden="true"
-        >
-          <span>+ New workflow</span>
-        </div>
+        <>
+          <div ref={ghost} className="new-glide" aria-hidden="true" />
+          <div ref={label} className="new-glide-label" aria-hidden="true">
+            {LABEL}
+          </div>
+        </>
       )}
     </div>
   )

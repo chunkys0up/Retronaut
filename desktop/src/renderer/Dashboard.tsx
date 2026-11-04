@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 
 import { api, live, type JobSnapshot, type Workflow } from './api'
 import type { Box } from './Flight'
@@ -40,12 +40,15 @@ function WorkflowCard({
   error,
   onRun,
   onOpen,
+  outDelay,
 }: {
   wf: Workflow
   state: CardState
   error: string | null
   onRun: () => void
   onOpen: () => void
+  /** When it sinks away under the New workflow glide, in the prompt screen's tile ripple. */
+  outDelay: string
 }) {
   const last = lastRun(wf)
   const running = state === 'running'
@@ -54,7 +57,7 @@ function WorkflowCard({
   const tone = state === 'passed' ? 'text-ok' : state === 'failed' || (!state && (wf.status === 'needs_attention' || wf.status === 'failed')) ? 'text-warn' : 'muted'
 
   return (
-    <article className={`wf-card${state ? ` ${state}` : ''}`} aria-busy={running}>
+    <article className={`wf-card${state ? ` ${state}` : ''}`} aria-busy={running} style={{ '--out-delay': outDelay } as CSSProperties}>
       <div className="wf-card-text">
         <div className="wf-card-top">
           <span className={`dot ${status.dot}`} aria-hidden="true" />
@@ -350,9 +353,12 @@ export function Dashboard({
         </div>
       ) : (
         <div className="wf-grid">
-          {sorted.map((wf) => (
+          {sorted.map((wf, i) => (
             <WorkflowCard
               key={wf.id}
+              // The prompt screen's tile ripple, (row) × 45ms + (column) × 12ms, over the
+              // grid's two columns: the top row first, left to right.
+              outDelay={`${Math.floor(i / 2) * 45 + (i % 2) * 12}ms`}
               wf={wf}
               state={stateOf(wf.id)}
               error={errors[wf.id] ?? null}

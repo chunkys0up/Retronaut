@@ -204,7 +204,7 @@ export default function App() {
     if (!glide) return
     setNewFrom(from)
     setHomeLeaving(true)
-    setTimeout(() => setHomeLeaving(false), 480)
+    setTimeout(() => setHomeLeaving(false), 900) // as long as the prompt screen stays when sending
   }
 
   async function start(prompt: string, from?: Box) {

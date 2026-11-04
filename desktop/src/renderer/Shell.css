@@ -2956,9 +2956,14 @@ button.sort-button:focus-visible {
 }
 
 /* ---------- Home's New workflow: the button glides into the composer ----------
-   Home fades and lifts away under it, the glow grows up from the bottom to full, and
-   the tiles ripple in outwards from the composer (Home.tsx times each one). */
+   The send animation run the other way (Flight.tsx, and .home.leaving above), with its
+   timings and curves: Home goes as the prompt screen does when a prompt is sent, the
+   button's copy glides on the send's 860ms curve (Home.tsx), the glow fades in on the
+   same 0.9s, and the prompt screen comes in as the reverse of its own leaving. */
 
+/* Home dissolving under the glide: the header and toolbar lift away, the cards sink in
+   a ripple (Dashboard sets each one's delay as Home sets the tiles'), and the button
+   that was clicked goes at once, as the composer does when a prompt is sent. */
 .page.dashboard.leaving {
   position: absolute;
   top: 28px;
@@ -2967,47 +2972,57 @@ button.sort-button:focus-visible {
   z-index: 0;
   margin: 0 auto;
   pointer-events: none;
-  animation: dash-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
-@keyframes dash-out {
-  to {
-    opacity: 0;
-    transform: translateY(-10px);
-    filter: blur(4px);
-  }
+.page.dashboard.leaving .new-button {
+  visibility: hidden;
 }
-/* The button's copy in flight: Home animates its box from orange to the composer's white. */
-.new-glide {
+.page.dashboard.leaving > .view-head,
+.page.dashboard.leaving > .dash-tools,
+.page.dashboard.leaving > .dash-empty,
+.page.dashboard.leaving > .dash-none {
+  animation: lift-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.page.dashboard.leaving .wf-card {
+  animation: sink-out 0.52s cubic-bezier(0.4, 0, 0.2, 1) var(--out-delay, 40ms) forwards;
+}
+
+/* The glide's two layers (Home.tsx animates them): the box, laid out as the composer and
+   scaled from the button, and the label, laid out at the composer's text and scaled from
+   the button's. Both move by transform alone, as the send's flight does. */
+.new-glide,
+.new-glide-label {
   position: fixed;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 8px;
-  background: #ff4608;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+  transform-origin: 0 0;
   pointer-events: none;
-  will-change: left, top, width, height;
+  will-change: transform;
 }
-.new-glide span {
-  animation: glide-label-out 0.2s ease-out forwards;
+.new-glide {
+  z-index: 49;
+  border-radius: var(--radius);
+  background: #fff;
 }
-@keyframes glide-label-out {
-  to {
-    opacity: 0;
-    transform: scale(0.92);
-  }
+.new-glide-label {
+  z-index: 50;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: nowrap;
 }
-/* The real composer waits, hidden, until the copy lands on it. */
+
+/* The real composer waits, hidden, until the box lands on it; then its contents rise in,
+   as the build bar's do when the send's box lands on it. */
 .composer.awaiting {
   visibility: hidden;
 }
+.composer.landing > * {
+  animation: bar-content-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The glow: the same 0.9s and curve as its fade on sending, growing up from the bottom. */
 .glow-layer.on.grow {
   transform-origin: 50% 100%;
-  animation: glow-grow 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: glow-grow 0.9s cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 @keyframes glow-grow {
   from {
@@ -3015,30 +3030,29 @@ button.sort-button:focus-visible {
     transform: scale(0.85, 0.3);
   }
 }
+
+/* The prompt screen coming in: its leaving, reversed. The headline comes down out of the
+   blur it lifts into; the tiles rise from where they sink to, in the same ripple. */
+.home.entering:not(.leaving) .home-hero,
+.home.entering:not(.leaving) .home-notice {
+  animation: lift-in 0.42s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
 .home.entering:not(.leaving) .tile,
 .home.entering:not(.leaving) .chip {
   /* backwards: hidden through its delay, then back to its own styles (the chips' hover lift). */
-  animation: ripple-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) var(--in-delay, 0ms) backwards;
+  animation: rise-in 0.52s cubic-bezier(0.4, 0, 0.2, 1) var(--out-delay, 40ms) backwards;
 }
-@keyframes ripple-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.92);
-  }
+@keyframes lift-in {
+  from { opacity: 0; transform: translateY(-16px); filter: blur(6px); }
 }
-.home.entering:not(.leaving) .home-hero,
-.home.entering:not(.leaving) .home-notice {
-  animation: hero-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.18s backwards;
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.96); }
 }
-@keyframes hero-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-    filter: blur(4px);
-  }
-}
+
 @media (prefers-reduced-motion: reduce) {
-  .page.dashboard.leaving,
+  .page.dashboard.leaving > *,
+  .page.dashboard.leaving .wf-card,
+  .composer.landing > *,
   .glow-layer.on.grow,
   .home.entering .tile,
   .home.entering .chip,
