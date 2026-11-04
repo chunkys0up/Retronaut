@@ -241,7 +241,8 @@ route('POST', '/reset', () => {
 
 // ---------- workflows ----------
 
-route('GET', '/workflows', () => ({ workflows: workflows.list() }))
+// Without each script's text, but saying whether there is one (Home's Run buttons).
+route('GET', '/workflows', () => ({ workflows: workflows.list().map((w) => ({ ...w, runnable: workflows.runnable(w.id) })) }))
 
 route('POST', '/workflows', (req) => {
   const { workflow: wf, job: j } = builder.startBuild(text(req.body, 'prompt'))

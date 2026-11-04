@@ -113,7 +113,8 @@ export type Workflow = {
   runs: RunSummary[]
   heals: number
   note: string
-  script?: string | null
+  script?: string | null // only from GET /workflows/:id
+  runnable?: boolean // only from GET /workflows: whether it has a script to run
 }
 
 export type JobEvent = { i: number; ts: number; kind: string; label: string; detail: string; image?: string }

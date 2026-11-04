@@ -131,6 +131,11 @@ export function remove(id: string): void {
   rmSync(folder(id), { recursive: true, force: true })
 }
 
+/** Whether it has a saved script to run, without reading it (for the list). */
+export function runnable(id: string): boolean {
+  return existsSync(join(folder(id), SCRIPT))
+}
+
 export function script(id: string): string | null {
   const path = join(folder(id), SCRIPT)
   return existsSync(path) ? readFileSync(path, 'utf8') : null

@@ -69,7 +69,7 @@ function WorkflowCard({
         {error && <p className="request-error small">{error}</p>}
       </div>
       <div className="wf-card-actions">
-        {wf.script && (
+        {(wf.runnable || wf.script) && (
           <button type="button" className="wf-card-run" onClick={onRun} disabled={running || state === 'idle' || wf.status === 'building'}>
             {running && <span className="spinner" aria-hidden="true" />}
             {running ? 'Running…' : 'Run'}
