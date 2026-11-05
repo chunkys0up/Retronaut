@@ -61,12 +61,12 @@ function Check({ ok, label, detail, fix }: { ok: boolean | null; label: string; 
 
 // Coming in from Home's New workflow button: the send animation (Flight.tsx) run the other
 // way, with the same glide, timings and fades. The orange button glides into the composer's
-// Build workflow button, and the white composer grows out from under it, from its corner.
+// Build workflow button, and at the same time the white composer glides and expands out
+// from under it, from the page's top-right corner where the button was.
 const FROM_LABEL = '+ New workflow'
 const TO_LABEL = 'Build workflow'
 const FROM_PX = 12.5 // the New workflow button's text; Build workflow's is 12px
 const BUTTON_RADIUS = 4 // both buttons' corners
-const GROW_DELAY = 160 // the composer starts growing once the button is most of the way there
 const STEPS = 32
 
 /**
@@ -133,9 +133,9 @@ export function Home({
   //   glided across on the send's curve, landing exactly on Build workflow;
   // - its label: the two buttons' words stacked, crossfading as it goes, on the send's
   //   450ms schedule for what a flying box carries in and out;
-  // - the composer: laid out as itself and started as Build workflow's own box, so it grows
-  //   out from under the button, from its corner, once the button is most of the way there,
-  //   its hairline ring and shadow coming in as it grows.
+  // - the composer: laid out as itself and started as the New workflow button's box, top
+  //   right, so it glides and expands out from under the button as the button glides, its
+  //   hairline ring and shadow coming in as it grows.
   const ghostBox = useRef<HTMLDivElement>(null)
   const ghostButton = useRef<HTMLDivElement>(null)
   const ghostLabel = useRef<HTMLDivElement>(null)
@@ -172,20 +172,21 @@ export function Home({
     const out = oldWords.animate([{ opacity: 1 }, { offset: 0.3, opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-out', fill: 'both' })
     const into = newWords.animate([{ opacity: 0 }, { offset: 0.3, opacity: 0 }, { opacity: 1 }], { duration: 450, easing: 'ease-out', fill: 'both' })
 
-    // The composer, growing from Build workflow's box to its own, from the corner the button sits in.
+    // The composer: from the New workflow button's box, top right, to its own, gliding and
+    // expanding alongside the button on the same curve, under it all the way.
     const target = card.getBoundingClientRect()
     place(shell, target)
-    const cx = button.width / target.width
-    const cy = button.height / target.height
-    const grow = shell.animate([{ transform: flip(button, target) }, { transform: 'none' }], { ...GLIDE, delay: GROW_DELAY })
-    const boxCorners = shell.animate(corners(cx, cy, BUTTON_RADIUS, RADIUS), { duration: GLIDE.duration, delay: GROW_DELAY, fill: 'both' })
+    const cx = from.width / target.width
+    const cy = from.height / target.height
+    const grow = shell.animate([{ transform: flip(from, target) }, { transform: 'none' }], GLIDE)
+    const boxCorners = shell.animate(corners(cx, cy, BUTTON_RADIUS, RADIUS), { duration: GLIDE.duration, fill: 'both' })
     const appear = shell.animate(
       [
         { opacity: 0, boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0), 0 18px 50px rgba(0, 0, 0, 0)' },
         { offset: 0.3, opacity: 1 },
         { opacity: 1, boxShadow: COMPOSER_SHADOW },
       ],
-      { duration: 450, delay: GROW_DELAY, easing: 'ease-out', fill: 'both' },
+      { duration: 450, easing: 'ease-out', fill: 'both' },
     )
 
     Promise.all([glide.finished, grow.finished]).then(() => {
@@ -289,7 +290,15 @@ export function Home({
           <span
             key={`${c}-${r}`}
             className="tile"
-            style={{ ...at(c, r), ...blinks[i], '--out-delay': `${(r - 3) * 45 + Math.abs(c - 6.5) * 12}ms` } as CSSProperties}
+            style={
+              {
+                ...at(c, r),
+                ...blinks[i],
+                '--out-delay': `${(r - 3) * 45 + Math.abs(c - 6.5) * 12}ms`,
+                // Coming in, the same ripple from the other end: the bottom row first, up.
+                '--in-delay': `${(8 - r) * 45 + Math.abs(c - 6.5) * 12}ms`,
+              } as CSSProperties
+            }
             aria-hidden="true"
           />
         ))}
@@ -321,7 +330,7 @@ export function Home({
             key={s.label}
             type="button"
             className="chip"
-            style={at(4 + i * 2, 4, 2)}
+            style={{ ...at(4 + i * 2, 4, 2), '--in-delay': `${(8 - 4) * 45 + Math.abs(4.5 + i * 2 - 6.5) * 12}ms` } as CSSProperties}
             onClick={() => suggest(s.prompt)}
             title={s.prompt}
           >

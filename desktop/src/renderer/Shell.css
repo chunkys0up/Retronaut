@@ -2961,9 +2961,10 @@ button.sort-button:focus-visible {
    button's copy glides on the send's 860ms curve (Home.tsx), the glow fades in on the
    same 0.9s, and the prompt screen comes in as the reverse of its own leaving. */
 
-/* Home dissolving under the glide: the header and toolbar lift away, the cards sink in
-   a ripple (Dashboard sets each one's delay as Home sets the tiles'), and the button
-   that was clicked goes at once, as the composer does when a prompt is sent. */
+/* Home dissolving under the glide: everything fades and blurs where it is, on the send's
+   0.42s leaving curve, and the button that was clicked goes at once, as the composer does
+   when a prompt is sent. (Each part blurs on its own: a filter on the page would flatten
+   the cards' glass.) */
 .page.dashboard.leaving {
   position: absolute;
   top: 28px;
@@ -2979,11 +2980,12 @@ button.sort-button:focus-visible {
 .page.dashboard.leaving > .view-head,
 .page.dashboard.leaving > .dash-tools,
 .page.dashboard.leaving > .dash-empty,
-.page.dashboard.leaving > .dash-none {
-  animation: lift-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
+.page.dashboard.leaving > .dash-none,
 .page.dashboard.leaving .wf-card {
-  animation: sink-out 0.52s cubic-bezier(0.4, 0, 0.2, 1) var(--out-delay, 40ms) forwards;
+  animation: blur-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes blur-out {
+  to { opacity: 0; filter: blur(6px); }
 }
 
 /* The glide's layers (Home.tsx animates them), each laid out where it lands and moved there
@@ -3072,7 +3074,8 @@ button.sort-button:focus-visible {
 }
 
 /* The prompt screen coming in: its leaving, reversed. The headline comes down out of the
-   blur it lifts into; the tiles rise from where they sink to, in the same ripple. */
+   blur it lifts into; the tiles rise from where they sink to, in its ripple run from the
+   other end, the bottom row first and up (Home sets each one's --in-delay). */
 .home.entering:not(.leaving) .home-hero,
 .home.entering:not(.leaving) .home-notice {
   animation: lift-in 0.42s cubic-bezier(0.4, 0, 0.2, 1) backwards;
@@ -3080,7 +3083,7 @@ button.sort-button:focus-visible {
 .home.entering:not(.leaving) .tile,
 .home.entering:not(.leaving) .chip {
   /* backwards: hidden through its delay, then back to its own styles (the chips' hover lift). */
-  animation: rise-in 0.52s cubic-bezier(0.4, 0, 0.2, 1) var(--out-delay, 40ms) backwards;
+  animation: rise-in 0.52s cubic-bezier(0.4, 0, 0.2, 1) var(--in-delay, 40ms) backwards;
 }
 @keyframes lift-in {
   from { opacity: 0; transform: translateY(-16px); filter: blur(6px); }
