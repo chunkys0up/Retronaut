@@ -2992,6 +2992,7 @@ button.sort-button:focus-visible {
    by transform alone, as the send's flight is: the composer growing out from under the
    button, the orange button gliding onto Build workflow, and its two labels crossfading. */
 .new-glide-box,
+.new-glide-hint,
 .new-glide-button,
 .new-glide-label {
   position: fixed;
@@ -3000,9 +3001,21 @@ button.sort-button:focus-visible {
   will-change: transform;
 }
 .new-glide-box {
-  z-index: 48;
+  z-index: 47;
   border-radius: var(--radius);
   background: #fff;
+}
+/* The composer's placeholder, set exactly as the text area sets it, so it wraps the same
+   and the real one takes over where it lands. */
+.new-glide-hint {
+  z-index: 48;
+  overflow: hidden;
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.45;
+  color: rgba(36, 36, 36, 0.5);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 .new-glide-button {
   z-index: 49;
@@ -3023,14 +3036,10 @@ button.sort-button:focus-visible {
   grid-area: 1 / 1;
 }
 
-/* The real composer waits, hidden, until the layers land on it; then its text rises in, as
-   the build bar's title row does when the send's box lands on it. (Build workflow doesn't:
-   the button landed exactly on it, as the send's segments land on the bar's.) */
+/* The real composer waits, hidden, until the layers land on it, and takes over in place:
+   its placeholder and Build workflow are already where the glide put them. */
 .composer.awaiting {
   visibility: hidden;
-}
-.composer.landing > textarea {
-  animation: bar-content-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* The glow: the faint one along the bottom of every page grows into the prompt screen's
@@ -3095,7 +3104,6 @@ button.sort-button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .page.dashboard.leaving > *,
   .page.dashboard.leaving .wf-card,
-  .composer.landing > *,
   .glow-layer.on.grow,
   .home.entering .tile,
   .home.entering .chip,

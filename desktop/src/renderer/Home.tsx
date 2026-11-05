@@ -59,6 +59,9 @@ function Check({ ok, label, detail, fix }: { ok: boolean | null; label: string; 
   )
 }
 
+const PLACEHOLDER =
+  'Take the work order emails that my vendor emails me, add up each order, and create the invoices in my accounting software'
+
 // Coming in from Home's New workflow button: the send animation (Flight.tsx) run the other
 // way, with the same glide, timings and fades. The orange button glides into the composer's
 // Build workflow button, and at the same time the white composer glides and expands out
@@ -135,19 +138,24 @@ export function Home({
   //   450ms schedule for what a flying box carries in and out;
   // - the composer: laid out as itself and started as the New workflow button's box, top
   //   right, so it glides and expands out from under the button as the button glides, its
-  //   hairline ring and shadow coming in as it grows.
+  //   hairline ring and shadow coming in as it grows;
+  // - its placeholder: unscaled, carried at its place in the growing box (clipped to it)
+  //   and fading in on the way, so it's already there when the box lands.
   const ghostBox = useRef<HTMLDivElement>(null)
   const ghostButton = useRef<HTMLDivElement>(null)
   const ghostLabel = useRef<HTMLDivElement>(null)
+  const ghostHint = useRef<HTMLDivElement>(null)
   const submitButton = useRef<HTMLButtonElement>(null)
   const [landed, setLanded] = useState(from === null)
   useLayoutEffect(() => {
     const shell = ghostBox.current
     const pill = ghostButton.current
     const words = ghostLabel.current
+    const hint = ghostHint.current
     const card = form.current
     const build = submitButton.current
-    if (!from || !shell || !pill || !words || !card || !build) return
+    const text = box.current
+    if (!from || !shell || !pill || !words || !hint || !card || !build || !text) return
     const place = (el: HTMLElement, r: DOMRect) =>
       Object.assign(el.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
 
@@ -189,12 +197,42 @@ export function Home({
       { duration: 450, easing: 'ease-out', fill: 'both' },
     )
 
+    // The placeholder: laid out where the composer's text sits, and kept at that place in the
+    // box as it glides (following its top-left corner, not scaled), clipped to the box's
+    // edges so it never shows outside it. The box's corner and size move linearly in the
+    // glide's progress, so each step is worked out on the glide's curve, as its corners are.
+    const at = text.getBoundingClientRect()
+    place(hint, at)
+    const ox = at.left - target.left // the text's place inside the composer
+    const oy = at.top - target.top
+    const carryHint = hint.animate(
+      Array.from({ length: STEPS + 1 }, (_, i) => {
+        const p = glideEase(i / STEPS)
+        const width = from.width + (target.width - from.width) * p
+        const height = from.height + (target.height - from.height) * p
+        const right = Math.max(0, at.width - (width - ox))
+        const bottom = Math.max(0, at.height - (height - oy))
+        return {
+          offset: i / STEPS,
+          transform: `translate(${(from.left - target.left) * (1 - p)}px, ${(from.top - target.top) * (1 - p)}px)`,
+          clipPath: `inset(0 ${right}px ${bottom}px 0)`,
+        }
+      }),
+      { duration: GLIDE.duration, fill: 'both' },
+    )
+    // Fading in while the box grows: from a fifth of the way, there by three quarters.
+    const showHint = hint.animate([{ opacity: 0 }, { offset: 0.2, opacity: 0 }, { offset: 0.75, opacity: 1 }, { opacity: 1 }], {
+      duration: GLIDE.duration,
+      easing: 'ease-out',
+      fill: 'both',
+    })
+
     Promise.all([glide.finished, grow.finished]).then(() => {
       setLanded(true)
-      box.current?.focus()
+      text.focus()
     }, () => {})
     return () => {
-      for (const a of [glide, pillCorners, settle, carry, out, into, grow, boxCorners, appear]) a.cancel()
+      for (const a of [glide, pillCorners, settle, carry, out, into, grow, boxCorners, appear, carryHint, showHint]) a.cancel()
     }
     // Runs once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -301,13 +339,13 @@ export function Home({
         ))}
 
         <div className="composer-slot" ref={slot}>
-          <form className={`composer${!landed ? ' awaiting' : from ? ' landing' : ''}`} ref={form} onSubmit={submit} onMouseDown={focusComposer}>
+          <form className={`composer${landed ? '' : ' awaiting'}`} ref={form} onSubmit={submit} onMouseDown={focusComposer}>
             <textarea
               ref={box}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Take the work order emails that my vendor emails me, add up each order, and create the invoices in my accounting software"
+              placeholder={PLACEHOLDER}
               autoFocus
               aria-label="Describe the workflow to automate"
             />
@@ -338,10 +376,13 @@ export function Home({
       </div>
 
       {/* The glide's layers, placed and animated by the effect above: the composer growing
-          under the button, the button, and its two labels crossfading. */}
+          under the button with its placeholder, the button, and its two labels crossfading. */}
       {from && !landed && (
         <>
           <div ref={ghostBox} className="new-glide-box" aria-hidden="true" />
+          <div ref={ghostHint} className="new-glide-hint" aria-hidden="true">
+            {PLACEHOLDER}
+          </div>
           <div ref={ghostButton} className="new-glide-button" aria-hidden="true" />
           <div ref={ghostLabel} className="new-glide-label" aria-hidden="true">
             <span>{FROM_LABEL}</span>
