@@ -280,9 +280,6 @@ export function Home({
           <br />
           legacy finance workflows.
         </h1>
-        <p>
-          Retronaut explores your apps and accounts, shows you its plan, then builds an automation that runs on your own software and repairs itself when anything changes.
-        </p>
       </div>
 
       <div className="home-stage">
