@@ -220,8 +220,8 @@ export function Home({
       }),
       { duration: GLIDE.duration, fill: 'both' },
     )
-    // Fading in while the box grows: from a fifth of the way, there by three quarters.
-    const showHint = hint.animate([{ opacity: 0 }, { offset: 0.2, opacity: 0 }, { offset: 0.75, opacity: 1 }, { opacity: 1 }], {
+    // Fading in only near the end, as the box settles: hidden until 65% of the way, there as it lands.
+    const showHint = hint.animate([{ opacity: 0 }, { offset: 0.65, opacity: 0 }, { opacity: 1 }], {
       duration: GLIDE.duration,
       easing: 'ease-out',
       fill: 'both',
